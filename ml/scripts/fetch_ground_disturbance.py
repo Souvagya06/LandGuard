@@ -1,0 +1,191 @@
+"""
+fetch_ground_disturbance.py
+
+Computes a ground-disturbance signal from Sentinel-1 SAR backscatter change
+detection (before vs. after) for each target zone, and exports the result
+as a GeoTIFF into ml/data/raw/sentinel1_deformation/.
+
+Mirrors the structure of fetch_ndvi.py / fetch_terrain.py in this pipeline:
+- Same Earth Engine auth/init pattern
+- Same per-zone loop + export-to-local-GeoTIFF pattern
+- Output naming: <zone_id>_disturbance.tif
+
+Method:
+- Pull Sentinel-1 GRD (VV + VH, IW mode, ascending or descending — configurable)
+  for a "before" window and an "after" window.
+- Speckle-filter with a focal median, then take the log-ratio
+  (after / before) in dB for each polarization.
+- Combine VV + VH log-ratio into a single disturbance magnitude band
+  (mean of absolute log-ratios), since abrupt land-surface change
+  (hill-cutting, slope failure precursors, construction, deforestation)
+  shows up as a spike in backscatter change regardless of polarization.
+- Clip to zone geometry and export.
+
+Requires: earthengine-api, geemap (for local export helper)
+    pip install earthengine-api geemap
+Auth (one-time): earthengine authenticate
+"""
+
+import os
+import sys
+import argparse
+from datetime import datetime
+
+import ee
+import geemap
+
+# ---------------------------------------------------------------------------
+# Zone definitions
+#
+# IMPORTANT: these should match exactly the zone IDs/geometries used in
+# fetch_terrain.py and fetch_ndvi.py so that build_feature_table.py can
+# join all layers on zone_id + grid cell. If you already have a shared
+# zones config (e.g. ml/scripts/zones_config.py) with plain [minLon, minLat,
+# maxLon, maxLat] bounds, just replace ZONE_BOUNDS below with an import from
+# there — keep build_zones() as-is so geometry construction still happens
+# after ee.Initialize().
+#
+ZONE_BOUNDS = {
+    "zone_1": [94.90, 27.90, 95.10, 28.10],
+    "zone_2": [95.20, 28.00, 95.40, 28.20],
+    "zone_3": [95.50, 27.80, 95.70, 28.00],
+}
+
+
+def build_zones():
+    """Construct ee.Geometry objects. Must be called AFTER ee.Initialize()."""
+    return {zid: ee.Geometry.Rectangle(bounds) for zid, bounds in ZONE_BOUNDS.items()}
+# --- ZONES ---
+
+OUT_DIR = os.path.join("ml", "data", "raw", "sentinel1_deformation")
+
+
+def get_s1_collection(geometry, start, end, orbit="ASCENDING"):
+    """Filtered, speckle-reduced Sentinel-1 GRD collection for a window."""
+    coll = (
+        ee.ImageCollection("COPERNICUS/S1_GRD")
+        .filterBounds(geometry)
+        .filterDate(start, end)
+        .filter(ee.Filter.eq("instrumentMode", "IW"))
+        .filter(ee.Filter.eq("orbitProperties_pass", orbit))
+        .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VV"))
+        .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VH"))
+        .select(["VV", "VH"])
+    )
+    return coll
+
+
+def speckle_filter(image, radius=30):
+    """Simple focal-median speckle filter."""
+    return image.focal_median(radius, "circle", "meters")
+
+
+def composite_window(geometry, start, end, orbit="ASCENDING"):
+    """Median composite (in linear power, converted back to dB) for a window."""
+    coll = get_s1_collection(geometry, start, end, orbit)
+    n = coll.size().getInfo()
+    if n == 0:
+        raise ValueError(
+            f"No Sentinel-1 scenes found for {start}..{end} "
+            f"(orbit={orbit}) over this geometry."
+        )
+    # Convert dB -> linear power before averaging, then back to dB
+    linear = coll.map(lambda img: ee.Image(10).pow(img.divide(10)))
+    median_linear = linear.median()
+    median_db = median_linear.log10().multiply(10)
+    return speckle_filter(median_db).clip(geometry)
+
+
+def disturbance_image(geometry, before_start, before_end, after_start, after_end, orbit="ASCENDING"):
+    """Log-ratio change detection combined across VV + VH into one band."""
+    before = composite_window(geometry, before_start, before_end, orbit)
+    after = composite_window(geometry, after_start, after_end, orbit)
+
+    log_ratio = after.subtract(before)  # already in dB, so this is the log-ratio
+    vv_change = log_ratio.select("VV").abs()
+    vh_change = log_ratio.select("VH").abs()
+
+    disturbance = vv_change.add(vh_change).divide(2).rename("disturbance")
+    return disturbance.addBands(vv_change.rename("vv_change")).addBands(
+        vh_change.rename("vh_change")
+    )
+
+
+def export_zone(zone_id, geometry, before_start, before_end, after_start, after_end, orbit, out_dir, scale=20):
+    print(f"[{zone_id}] Building before/after composites "
+          f"({before_start}..{before_end} vs {after_start}..{after_end}, orbit={orbit})")
+    img = disturbance_image(geometry, before_start, before_end, after_start, after_end, orbit)
+
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{zone_id}_disturbance.tif")
+
+    print(f"[{zone_id}] Exporting to {out_path} (scale={scale}m)")
+    geemap.ee_export_image(
+        img,
+        filename=out_path,
+        scale=scale,
+        region=geometry,
+        file_per_band=False,
+    )
+    print(f"[{zone_id}] Done.")
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Fetch Sentinel-1 ground disturbance layer per zone.")
+    p.add_argument("--before-start", required=True, help="e.g. 2023-11-01")
+    p.add_argument("--before-end", required=True, help="e.g. 2024-01-31")
+    p.add_argument("--after-start", required=True, help="e.g. 2024-06-01")
+    p.add_argument("--after-end", required=True, help="e.g. 2024-08-31")
+    p.add_argument("--orbit", default="ASCENDING", choices=["ASCENDING", "DESCENDING"])
+    p.add_argument("--scale", type=int, default=20, help="Export resolution in meters")
+    p.add_argument("--zones", nargs="*", default=None, help="Subset of zone ids to run (default: all)")
+    p.add_argument("--out-dir", default=OUT_DIR)
+    p.add_argument("--project", default=None, help="Earth Engine cloud project id, if required by your account")
+    return p.parse_args()
+
+
+def validate_dates(*date_strs):
+    for d in date_strs:
+        try:
+            datetime.strptime(d, "%Y-%m-%d")
+        except ValueError:
+            sys.exit(f"Invalid date format: {d} (expected YYYY-MM-DD)")
+
+
+def main():
+    args = parse_args()
+    validate_dates(args.before_start, args.before_end, args.after_start, args.after_end)
+
+    try:
+        ee.Initialize(project=args.project) if args.project else ee.Initialize()
+    except Exception:
+        print("Earth Engine not initialized — running ee.Authenticate() once, then retrying init.")
+        ee.Authenticate()
+        ee.Initialize(project=args.project) if args.project else ee.Initialize()
+
+    zones = build_zones()  # only build ee.Geometry objects after Initialize()
+
+    zone_ids = args.zones if args.zones else list(zones.keys())
+    missing = [z for z in zone_ids if z not in zones]
+    if missing:
+        sys.exit(f"Unknown zone id(s): {missing}. Available: {list(zones.keys())}")
+
+    for zone_id in zone_ids:
+        geometry = zones[zone_id]
+        export_zone(
+            zone_id,
+            geometry,
+            args.before_start,
+            args.before_end,
+            args.after_start,
+            args.after_end,
+            args.orbit,
+            args.out_dir,
+            scale=args.scale,
+        )
+
+    print("\nAll zones processed. Output written to:", args.out_dir)
+
+
+if __name__ == "__main__":
+    main()
