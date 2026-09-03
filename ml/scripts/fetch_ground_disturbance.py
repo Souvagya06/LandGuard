@@ -35,21 +35,11 @@ import ee
 import geemap
 
 # ---------------------------------------------------------------------------
-# Zone definitions
-#
-# IMPORTANT: these should match exactly the zone IDs/geometries used in
-# fetch_terrain.py and fetch_ndvi.py so that build_feature_table.py can
-# join all layers on zone_id + grid cell. If you already have a shared
-# zones config (e.g. ml/scripts/zones_config.py) with plain [minLon, minLat,
-# maxLon, maxLat] bounds, just replace ZONE_BOUNDS below with an import from
-# there — keep build_zones() as-is so geometry construction still happens
-# after ee.Initialize().
-#
-ZONE_BOUNDS = {
-    "zone_1": [94.90, 27.90, 95.10, 28.10],
-    "zone_2": [95.20, 28.00, 95.40, 28.20],
-    "zone_3": [95.50, 27.80, 95.70, 28.00],
-}
+# Zone definitions for Arunachal Pradesh target zones
+try:
+    from zones_config import ZONE_BOUNDS
+except ImportError:
+    from ml.scripts.zones_config import ZONE_BOUNDS
 
 
 def build_zones():
