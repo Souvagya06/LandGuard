@@ -49,18 +49,18 @@ def compute_slope_aspect(dem_path: str) -> None:
     with rasterio.open(dem_path) as src:
         elevation = src.read(1).astype("float64")
         profile = src.profile
-        # pixel size in map units (degrees, since these are lat/lon
-        # rasters) - fine here, we only need relative slope/aspect
-        # for the risk model, not survey-grade accuracy
-        x_res = abs(src.transform.a)
-        y_res = abs(src.transform.e)
+        # Convert degree pixel size to approximate meters based on center latitude
+        # 1 deg lat ~= 111320 meters, 1 deg lon ~= 111320 * cos(lat) meters
+        mean_lat = (src.bounds.bottom + src.bounds.top) / 2.0
+        y_res_m = abs(src.transform.e) * 111320.0
+        x_res_m = abs(src.transform.a) * 111320.0 * np.cos(np.radians(mean_lat))
         nodata = src.nodata
 
     if nodata is not None:
         elevation = np.where(elevation == nodata, np.nan, elevation)
 
-    # Horn's method: gradient in x and y using a 3x3 neighborhood
-    dz_dy, dz_dx = np.gradient(elevation, y_res, x_res)
+    # Horn's gradient method in meters
+    dz_dy, dz_dx = np.gradient(elevation, y_res_m, x_res_m)
 
     slope_rad = np.arctan(np.sqrt(dz_dx ** 2 + dz_dy ** 2))
     slope_deg = np.degrees(slope_rad)

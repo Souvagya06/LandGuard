@@ -47,7 +47,9 @@ def build_zones():
     return {zid: ee.Geometry.Rectangle(bounds) for zid, bounds in ZONE_BOUNDS.items()}
 
 
-OUT_DIR = os.path.join("ml", "data", "raw", "sentinel1_deformation")
+OUT_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "data", "raw", "sentinel1_deformation"
+)
 
 
 def get_s1_collection(geometry, start, end, orbit="ASCENDING"):
