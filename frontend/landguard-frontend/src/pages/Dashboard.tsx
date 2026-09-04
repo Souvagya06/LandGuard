@@ -5,6 +5,7 @@ import type { Zone } from '../types'
 import MetricCard from '../components/MetricCard'
 import RiskMap from '../components/RiskMap'
 import ZonePanel from '../components/ZonePanel'
+import AnalysisPanel from '../components/AnalysisPanel'
 import { riskMeta } from '../lib/risk'
 
 export default function Dashboard() {
@@ -98,6 +99,8 @@ export default function Dashboard() {
           sending={alertMutation.isPending}
         />
       </div>
+
+      <AnalysisPanel zones={zones} selectedZone={selectedZone} />
     </div>
   )
 }

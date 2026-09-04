@@ -23,6 +23,9 @@ export default function Layout() {
             <a className={staticLinkClass} href="/">
               Home
             </a>
+            <a className={staticLinkClass} href="/dashboard.html#analysis">
+              Analysis
+            </a>
             <NavLink
               to="/alerts.html"
               className={({ isActive }) =>
