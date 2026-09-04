@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Send Alert | LandGuard AI</title>
+    <style>
+      html,body{background:#0b0f0e;margin:0;}
+      #root:empty{
+        min-height:100vh;display:flex;align-items:center;justify-content:center;
+        font-family:'IBM Plex Mono',monospace;color:#5c6a64;font-size:13px;
+      }
+      #root:empty::after{content:"Loading alert console…";}
+    </style>
+  </head>
+  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+</html>

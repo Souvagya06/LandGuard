@@ -1,4 +1,4 @@
-import type { Zone, AlertItem, WhatsAppAlertResult } from '../types'
+import type { Zone, AlertItem } from '../types'
 
 // Configure VITE_API_URL to use the FastAPI service in production.
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
@@ -28,23 +28,6 @@ export async function triggerAlert(zone: Zone): Promise<AlertItem> {
     body: JSON.stringify({ zoneId: zone.id }),
   })
   if (!res.ok) throw new Error('Failed to trigger alert')
-  return res.json()
-}
-
-export async function sendWhatsAppAlert(payload: {
-  zoneId: string
-  recipientPhone: string
-  message: string
-}): Promise<WhatsAppAlertResult> {
-  const res = await fetch(`${API_BASE}/alerts/whatsapp`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}))
-    throw new Error(detail.detail ?? 'Failed to prepare WhatsApp alert')
-  }
   return res.json()
 }
 
