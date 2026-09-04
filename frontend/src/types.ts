@@ -13,10 +13,17 @@ export interface Zone {
   lng: number
   riskScore: number
   riskLevel: RiskLevel
+  susceptibilityScore?: number
+  triggerProbability?: number
+  landslideProbability?: number
+  landslideRate?: number
+  groundDeformation?: number
+  deformationRateMm?: number
   rainfall24h: number
   rainfall7d: number
   roadStatus: 'open' | 'restricted' | 'blocked'
   factors: RiskFactor[]
+  explanation?: string
   updatedAt: string
 }
 

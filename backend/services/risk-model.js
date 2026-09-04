@@ -59,8 +59,8 @@ function predictTrigger(input, susceptibilityScore) {
 
 function riskLevel(score) {
   if (score >= 75) return 'critical'
-  if (score >= 55) return 'high'
-  if (score >= 30) return 'moderate'
+  if (score >= 50) return 'high'
+  if (score >= 25) return 'moderate'
   return 'low'
 }
 
