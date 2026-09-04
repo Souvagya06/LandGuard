@@ -48,12 +48,12 @@ export default function Dashboard() {
             Risk dashboard
           </h1>
           <p className="mt-1 text-sm text-[#93a19a]">
-            Live weather-driven landslide risk across monitored zones in the North Eastern Region.
+            Real-time landslide risk across monitored zones in the North Eastern Region.
           </p>
         </div>
         <div className="flex items-center gap-2 border border-[#26302d] bg-[#121716] px-3 py-2 text-xs text-[#93a19a]">
           <span className="h-2 w-2 rounded-full bg-[#57b79e] shadow-[0_0_10px_#57b79e]" />
-          Live monitoring · refreshes every 15s
+          Live monitoring
         </div>
       </div>
 
