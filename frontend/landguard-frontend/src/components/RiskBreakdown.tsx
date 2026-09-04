@@ -10,12 +10,12 @@ export default function RiskBreakdown({ factors }: { factors: RiskFactor[] }) {
         return (
           <div key={f.label}>
             <div className="mb-1 flex items-center justify-between text-xs">
-              <span className="text-neutral-600">{f.label}</span>
-              <span className="font-medium text-neutral-800">{pct}%</span>
+              <span className="text-[#93a19a]">{f.label}</span>
+              <span className="font-medium text-[#eef2ef]">{pct}%</span>
             </div>
-            <div className="h-1.5 rounded-full bg-neutral-100">
+            <div className="h-1.5 rounded-full bg-[#1c2422]">
               <div
-                className="h-full rounded-full bg-neutral-800"
+                className="h-full rounded-full bg-[#57b79e]"
                 style={{ width: `${pct}%` }}
               />
             </div>

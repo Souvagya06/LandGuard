@@ -13,10 +13,10 @@ export default function RiskMap({ zones, selectedId, onSelect }: Props) {
   const center: [number, number] = [25.6, 92.9]
 
   return (
-    <div className="h-[420px] w-full overflow-hidden rounded-xl border border-neutral-200">
+    <div className="map-frame h-[420px] w-full overflow-hidden rounded-lg border border-[#26302d]">
       <MapContainer center={center} zoom={6} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
         <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {zones.map((zone) => (
@@ -27,7 +27,7 @@ export default function RiskMap({ zones, selectedId, onSelect }: Props) {
             pathOptions={{
               color: mapColor(zone.riskLevel),
               fillColor: mapColor(zone.riskLevel),
-              fillOpacity: 0.6,
+              fillOpacity: 0.65,
               weight: zone.id === selectedId ? 3 : 1.5,
             }}
             eventHandlers={{ click: () => onSelect(zone) }}

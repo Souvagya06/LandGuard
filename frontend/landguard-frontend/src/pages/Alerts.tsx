@@ -22,15 +22,21 @@ export default function Alerts() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-medium text-neutral-900">Alerts</h1>
-        <p className="text-sm text-neutral-500">
+        <h1 className="text-lg font-medium text-[#eef2ef]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          Alerts
+        </h1>
+        <p className="text-sm text-[#93a19a]">
           Every warning sent to district administrations, field officers, and citizens.
         </p>
       </div>
 
-      {isError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Unable to load alerts. Check the API connection and try again.</div>}
+      {isError && (
+        <div className="rounded-lg border border-[#d9663f]/40 bg-[#d9663f]/10 px-4 py-3 text-sm text-[#e28e6c]">
+          Unable to load alerts. Check the API connection and try again.
+        </div>
+      )}
 
-      {isLoading && <p className="text-sm text-neutral-400">Loading alerts…</p>}
+      {isLoading && <p className="text-sm text-[#5c6a64]">Loading alerts…</p>}
 
       <div className="space-y-2">
         {alerts.map((alert) => {
@@ -38,24 +44,24 @@ export default function Alerts() {
           return (
             <div
               key={alert.id}
-              className="flex items-start justify-between gap-4 rounded-xl border border-neutral-200 bg-white p-4"
+              className="flex items-start justify-between gap-4 rounded-lg border border-[#26302d] bg-[#121716] p-4"
             >
               <div className="flex items-start gap-3">
                 <span className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${meta.dot}`} />
                 <div>
-                  <p className="text-sm font-medium text-neutral-800">{alert.zoneName}</p>
-                  <p className="text-sm text-neutral-600">{alert.message}</p>
-                  <p className="mt-1 text-xs uppercase tracking-wide text-neutral-400">
+                  <p className="text-sm font-medium text-[#eef2ef]">{alert.zoneName}</p>
+                  <p className="text-sm text-[#93a19a]">{alert.message}</p>
+                  <p className="mt-1 text-xs uppercase tracking-wide text-[#5c6a64]">
                     {alert.channel}
                   </p>
                 </div>
               </div>
-              <span className="shrink-0 text-xs text-neutral-400">{timeAgo(alert.createdAt)}</span>
+              <span className="shrink-0 text-xs text-[#5c6a64]">{timeAgo(alert.createdAt)}</span>
             </div>
           )
         })}
         {!isLoading && alerts.length === 0 && (
-          <p className="text-sm text-neutral-400">No alerts yet.</p>
+          <p className="text-sm text-[#5c6a64]">No alerts yet.</p>
         )}
       </div>
     </div>
