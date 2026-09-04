@@ -38,6 +38,18 @@ export default function Layout() {
             >
               Alerts
             </NavLink>
+            <NavLink
+              to="/send-alert.html"
+              className={({ isActive }) =>
+                `inline-flex min-h-9 items-center whitespace-nowrap rounded-sm border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'border-[#e0913f] bg-[#e0913f] text-[#1a1007]'
+                    : 'border-transparent text-[#93a19a] hover:border-[#26302d] hover:bg-[#121716] hover:text-[#eef2ef]'
+                }`
+              }
+            >
+              Send alert
+            </NavLink>
           </nav>
         </div>
       </header>

@@ -1,13 +1,7 @@
-import type { Zone, AlertItem, PredictPayload, PredictResult } from '../types'
+import type { Zone, AlertItem, WhatsAppAlertResult } from '../types'
 
-// Configure VITE_API_URL to use the Node.js service (default port 8000)
+// Configure VITE_API_URL to use the FastAPI service in production.
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
-
-export async function fetchHealth(): Promise<{ status: string; runtime: string; mlEngine: string; version: string }> {
-  const res = await fetch(`${API_BASE}/health`)
-  if (!res.ok) throw new Error('Health check failed')
-  return res.json()
-}
 
 export async function fetchZones(): Promise<Zone[]> {
   const res = await fetch(`${API_BASE}/zones`)
@@ -37,6 +31,23 @@ export async function triggerAlert(zone: Zone): Promise<AlertItem> {
   return res.json()
 }
 
+export async function sendWhatsAppAlert(payload: {
+  zoneId: string
+  recipientPhone: string
+  message: string
+}): Promise<WhatsAppAlertResult> {
+  const res = await fetch(`${API_BASE}/alerts/whatsapp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}))
+    throw new Error(detail.detail ?? 'Failed to prepare WhatsApp alert')
+  }
+  return res.json()
+}
+
 export async function submitReport(payload: {
   zoneId: string
   zoneName: string
@@ -51,15 +62,5 @@ export async function submitReport(payload: {
     body: JSON.stringify(payload),
   })
   if (!res.ok) throw new Error('Failed to submit report')
-  return res.json()
-}
-
-export async function predictCustomRisk(payload: PredictPayload): Promise<PredictResult> {
-  const res = await fetch(`${API_BASE}/predict`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) throw new Error('Failed to run ML prediction')
   return res.json()
 }
