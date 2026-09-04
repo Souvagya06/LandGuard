@@ -34,6 +34,10 @@ const weatherCache = new Map();
 const WEATHER_TTL_MS = 10 * 60 * 1000;
 let inFlightBatchPromise = null;
 
+// In-memory store for alerts and field reports
+const alerts = [];
+const reports = [];
+
 function getCacheKey(lat, lng) {
   return `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
 }
