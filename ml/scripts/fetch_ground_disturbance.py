@@ -3,12 +3,14 @@ fetch_ground_disturbance.py
 
 Computes a ground-disturbance signal from Sentinel-1 SAR backscatter change
 detection (before vs. after) for each target zone, and exports the result
-as a GeoTIFF into ml/data/raw/sentinel1_deformation/.
+as GeoTIFFs into ml/data/raw/sentinel1_deformation/.
 
 Mirrors the structure of fetch_ndvi.py / fetch_terrain.py in this pipeline:
 - Same Earth Engine auth/init pattern
 - Same per-zone loop + export-to-local-GeoTIFF pattern
-- Output naming: <zone_id>_disturbance.tif
+- Output naming: <zone_id>_disturbance.<band>.tif (one file per band -
+  keeps each individual download well under Earth Engine's ~48MB direct
+  download cap, which a combined 3-band file at fine resolution exceeded)
 
 Method:
 - Pull Sentinel-1 GRD (VV + VH, IW mode, ascending or descending — configurable)
@@ -34,8 +36,6 @@ from datetime import datetime
 import ee
 import geemap
 
-# ---------------------------------------------------------------------------
-# Zone definitions for Arunachal Pradesh target zones
 try:
     from zones_config import ZONE_BOUNDS
 except ImportError:
@@ -45,7 +45,7 @@ except ImportError:
 def build_zones():
     """Construct ee.Geometry objects. Must be called AFTER ee.Initialize()."""
     return {zid: ee.Geometry.Rectangle(bounds) for zid, bounds in ZONE_BOUNDS.items()}
-# --- ZONES ---
+
 
 OUT_DIR = os.path.join("ml", "data", "raw", "sentinel1_deformation")
 
@@ -101,33 +101,51 @@ def disturbance_image(geometry, before_start, before_end, after_start, after_end
     )
 
 
-def export_zone(zone_id, geometry, before_start, before_end, after_start, after_end, orbit, out_dir, scale=20):
+def export_zone(zone_id, geometry, before_start, before_end, after_start, after_end, orbit, out_dir, scale):
     print(f"[{zone_id}] Building before/after composites "
           f"({before_start}..{before_end} vs {after_start}..{after_end}, orbit={orbit})")
     img = disturbance_image(geometry, before_start, before_end, after_start, after_end, orbit)
 
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"{zone_id}_disturbance.tif")
 
-    print(f"[{zone_id}] Exporting to {out_path} (scale={scale}m)")
-    geemap.ee_export_image(
-        img,
-        filename=out_path,
-        scale=scale,
-        region=geometry,
-        file_per_band=False,
-    )
+    # Export each band as its own single-band file. A combined 3-band
+    # file at fine resolution exceeds Earth Engine's ~48MB direct
+    # download cap for these zone sizes; single bands at this scale
+    # stay comfortably under it and geemap's tiled fallback (which
+    # kicks in automatically if still needed) then works reliably.
+    for band in ("disturbance", "vv_change", "vh_change"):
+        out_path = os.path.join(out_dir, f"{zone_id}_{band}.tif")
+        print(f"[{zone_id}] Exporting band '{band}' to {out_path} (scale={scale}m)")
+        geemap.ee_export_image(
+            img.select(band),
+            filename=out_path,
+            scale=scale,
+            region=geometry,
+            file_per_band=False,
+        )
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            print(f"[{zone_id}]   -> saved {os.path.basename(out_path)} "
+                  f"({os.path.getsize(out_path) / 1024:.0f} KB)")
+        else:
+            print(f"[{zone_id}]   !! export FAILED or produced an empty file for band '{band}'")
+
     print(f"[{zone_id}] Done.")
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Fetch Sentinel-1 ground disturbance layer per zone.")
-    p.add_argument("--before-start", required=True, help="e.g. 2023-11-01")
-    p.add_argument("--before-end", required=True, help="e.g. 2024-01-31")
-    p.add_argument("--after-start", required=True, help="e.g. 2024-06-01")
-    p.add_argument("--after-end", required=True, help="e.g. 2024-08-31")
+    p.add_argument("--before-start", required=True, help="e.g. 2024-11-01")
+    p.add_argument("--before-end", required=True, help="e.g. 2025-02-28")
+    p.add_argument("--after-start", required=True, help="e.g. 2025-11-01")
+    p.add_argument("--after-end", required=True, help="e.g. 2026-02-28")
     p.add_argument("--orbit", default="ASCENDING", choices=["ASCENDING", "DESCENDING"])
-    p.add_argument("--scale", type=int, default=20, help="Export resolution in meters")
+    p.add_argument(
+        "--scale", type=int, default=100,
+        help="Export resolution in meters. Increased from the original 20m default - "
+             "at 20m, these zone sizes exceed Earth Engine's direct-download cap and "
+             "the export silently fails. 100m keeps every zone comfortably under it "
+             "while still being far finer than the ~1km grid cells used downstream.",
+    )
     p.add_argument("--zones", nargs="*", default=None, help="Subset of zone ids to run (default: all)")
     p.add_argument("--out-dir", default=OUT_DIR)
     p.add_argument("--project", default=None, help="Earth Engine cloud project id, if required by your account")
