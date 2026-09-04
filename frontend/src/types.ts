@@ -33,14 +33,8 @@ export interface AlertItem {
   zoneName: string
   level: RiskLevel
   message: string
-  channel: 'push' | 'sms' | 'whatsapp' | 'dashboard'
+  channel: 'push' | 'sms' | 'dashboard'
   createdAt: string
-}
-
-export interface WhatsAppAlertResult extends AlertItem {
-  deliveryStatus: 'queued'
-  recipientPhone: string
-  whatsappUrl: string
 }
 
 export interface FieldReport {

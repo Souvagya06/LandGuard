@@ -11,6 +11,7 @@ export default defineConfig({
         landing: resolve(__dirname, 'index.html'),
         dashboard: resolve(__dirname, 'dashboard.html'),
         alerts: resolve(__dirname, 'alerts.html'),
+        sendAlert: resolve(__dirname, 'send-alert.html'),
         about: resolve(__dirname, 'about.html'),
       },
     },
