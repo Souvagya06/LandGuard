@@ -4,12 +4,12 @@ The script searches Microsoft Planetary Computer's public STAC catalogue,
 selects the least-cloudy Sentinel-2 scenes, and creates a locally computed,
 cloud-masked median NDVI GeoTIFF for every LandGuard monitoring zone.
 
-Unlike the former implementation, the area of interest is always read from
-``zones_config`` (or the DEM metadata it exposes). That keeps the imagery,
-terrain layers, and historic-landslide labels spatially consistent.
+The area of interest is always read from ``zones_config`` (or the DEM
+metadata it exposes). That keeps the imagery, terrain layers, and
+historic-landslide labels spatially consistent - nothing hardcoded.
 
 Install:
-    pip install numpy rasterio pystac-client planetary-computer
+    pip install numpy rasterio pystac-client planetary-computer certifi
 
 Example:
     python fetch_ndvi.py --start-date 2025-11-01 --end-date 2026-02-28
@@ -21,6 +21,7 @@ import sys
 import time
 import warnings
 
+import certifi
 import numpy as np
 import planetary_computer
 import rasterio
@@ -36,12 +37,23 @@ except ImportError:
     from ml.scripts.zones_config import get_zone_bounds_from_dem
 
 
+# --- Windows SSL fix -------------------------------------------------------
+# GDAL/curl on many Windows Python installs can't locate a valid root CA
+# bundle, which makes every single remote-tile read fail identically
+# ("unable to read a remote tile ... Read failed") even though the network
+# connection itself is fine. Pointing curl explicitly at certifi's bundle
+# fixes this without touching system certificate stores.
+os.environ.setdefault("CURL_CA_BUNDLE", certifi.where())
+os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+# -----------------------------------------------------------------------
+
+
 STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 COLLECTION = "sentinel-2-l2a"
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "sentinel2_ndvi")
 NODATA = -9999.0
 CLEAR_SCL_CLASSES = {4, 5, 6, 7}  # vegetation, bare soil, water, unclassified
-MAX_READ_ATTEMPTS = 3
+MAX_READ_ATTEMPTS = 5
 
 
 def parse_args():
@@ -105,10 +117,15 @@ def read_window(asset_href, profile, window, resampling):
         try:
             # Single-range requests are more reliable than GDAL's multi-range
             # requests against occasionally busy public object storage.
+            # Explicit CA bundle (see top of file) fixes Windows SSL failures;
+            # longer timeout/more retries here handle genuinely slow links.
             with rasterio.Env(
+                CURL_CA_BUNDLE=certifi.where(),
                 GDAL_HTTP_MULTIRANGE="NO",
-                GDAL_HTTP_TIMEOUT="60",
-                GDAL_HTTP_MAX_RETRY="3",
+                GDAL_HTTP_TIMEOUT="120",
+                GDAL_HTTP_CONNECTTIMEOUT="30",
+                GDAL_HTTP_MAX_RETRY="5",
+                GDAL_HTTP_RETRY_DELAY="2",
                 GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
             ):
                 with rasterio.open(asset_href) as source:
