@@ -87,7 +87,7 @@ export default function Dashboard() {
                 }`}
               >
                 <p className="truncate text-xs font-medium text-[#eef2ef]">{zone.name}</p>
-                <p className="text-[11px] text-[#93a19a]">{zone.riskScore}% risk</p>
+                <p className="text-[11px] text-[#93a19a]">{zone.landslideRate ?? zone.riskScore}% landslide risk rate</p>
               </button>
             ))}
           </div>

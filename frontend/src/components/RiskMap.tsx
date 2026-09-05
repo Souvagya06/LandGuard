@@ -1,7 +1,7 @@
 import { MapContainer, TileLayer, CircleMarker, Tooltip } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Zone } from '../types'
-import { mapColor } from '../lib/risk'
+import { levelFromScore, mapColor } from '../lib/risk'
 
 interface Props {
   zones: Zone[]
@@ -25,15 +25,15 @@ export default function RiskMap({ zones, selectedId, onSelect }: Props) {
             center={[zone.lat, zone.lng]}
             radius={zone.id === selectedId ? 14 : 10}
             pathOptions={{
-              color: mapColor(zone.riskLevel),
-              fillColor: mapColor(zone.riskLevel),
+              color: mapColor(levelFromScore(zone.landslideRate ?? zone.riskScore)),
+              fillColor: mapColor(levelFromScore(zone.landslideRate ?? zone.riskScore)),
               fillOpacity: 0.65,
               weight: zone.id === selectedId ? 3 : 1.5,
             }}
             eventHandlers={{ click: () => onSelect(zone) }}
           >
             <Tooltip direction="top" offset={[0, -6]}>
-              {zone.name} — {zone.riskScore}% risk
+              {zone.name} — {zone.landslideRate ?? zone.riskScore}% landslide risk rate
             </Tooltip>
           </CircleMarker>
         ))}
