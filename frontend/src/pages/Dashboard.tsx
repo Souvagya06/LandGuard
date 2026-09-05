@@ -27,7 +27,7 @@ export default function Dashboard() {
   })
 
   const metrics = useMemo(() => {
-    const high = zones.filter((z) => z.riskLevel === 'high' || z.riskLevel === 'critical').length
+    const high = zones.filter((z) => (z.landslideRate ?? z.riskScore) >= 50).length
     const avgRain = zones.length
       ? Math.round(zones.reduce((s, z) => s + z.rainfall24h, 0) / zones.length)
       : 0
