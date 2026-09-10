@@ -2,8 +2,8 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { fetchZones } from '../lib/api'
-import type { Zone } from '../types'
+import { fetchZones, triggerAlert } from '../lib/api'
+import type { AlertItem, Zone } from '../types'
 
 type WarningType = 'critical' | 'moderate' | 'casual'
 type DeliveryMethod = 'popup' | 'app' | 'sms-app'
@@ -116,12 +116,14 @@ export default function SendAlert() {
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('sms-app')
   const [customMessage, setCustomMessage] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [sentAlertInfo, setSentAlertInfo] = useState<{
     zoneName: string
     district: string
     warningType: WarningType
     deliveryMethod: DeliveryMethod
     timestamp: string
+    delivery: AlertItem['delivery']
   } | null>(null)
 
   const activeZoneId = zoneId || initialZoneFromUrl || zones[0]?.id || ''
@@ -140,12 +142,19 @@ export default function SendAlert() {
     setSentAlertInfo(null)
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedZone || !message.trim()) return
 
     setIsSending(true)
-    setTimeout(() => {
+    setSendError(null)
+    try {
+      const alert = await triggerAlert({
+        zoneId: selectedZone.id,
+        level: warningType,
+        message,
+        channel: deliveryMethod,
+      })
       setIsSending(false)
       setSentAlertInfo({
         zoneName: selectedZone.name,
@@ -153,8 +162,12 @@ export default function SendAlert() {
         warningType,
         deliveryMethod,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        delivery: alert.delivery,
       })
-    }, 600)
+    } catch (error) {
+      setIsSending(false)
+      setSendError(error instanceof Error ? error.message : 'Unable to dispatch alert.')
+    }
   }
 
   const selectedWarningOption = warningOptions.find((opt) => opt.value === warningType)
@@ -424,12 +437,12 @@ export default function SendAlert() {
           </div>
 
           {/* Error Message */}
-          {isError && (
+          {(isError || sendError) && (
             <div className="flex items-center gap-3 rounded-lg border border-[#d9663f]/40 bg-[#d9663f]/10 p-4 text-sm text-[#e28e6c]">
               <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span>Unable to connect to live zone telemetry. Please verify connection and retry.</span>
+              <span>{sendError || 'Unable to connect to live zone telemetry. Please verify connection and retry.'}</span>
             </div>
           )}
 
@@ -443,11 +456,12 @@ export default function SendAlert() {
                   </svg>
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-sm font-semibold text-[#eef2ef]">
-                    Alert Dispatched Successfully at {sentAlertInfo.timestamp}
-                  </h4>
+                  <h4 className="text-sm font-semibold text-[#eef2ef]">Alert persisted at {sentAlertInfo.timestamp}</h4>
                   <p className="text-xs text-[#a7e2d0]">
                     Broadcast sent to <strong className="text-white">{sentAlertInfo.zoneName}</strong> ({sentAlertInfo.district} District) with level <strong className="uppercase text-white">{sentAlertInfo.warningType}</strong> via channel <strong className="text-white">{deliveryOptions.find((o) => o.value === sentAlertInfo.deliveryMethod)?.label}</strong>.
+                  </p>
+                  <p className="text-xs text-[#a7e2d0]">
+                    Push delivery: <strong className="text-white">{sentAlertInfo.delivery?.fcm?.delivered ?? 0}</strong> delivered of <strong className="text-white">{sentAlertInfo.delivery?.fcm?.attempted ?? 0}</strong> registered devices ({sentAlertInfo.delivery?.fcm?.reason?.replaceAll('_', ' ') || sentAlertInfo.delivery?.status || 'pending'}).
                   </p>
                 </div>
               </div>

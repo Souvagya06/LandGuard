@@ -6,6 +6,8 @@ const http = require('http');
 const WebSocket = require('ws');
 const { evaluateRisk } = require('./services/risk-model');
 const { loadMonitoringLocations } = require('./services/model-locations');
+const { AlertStore } = require('./services/alert-store');
+const { sendFcmAlert } = require('./services/fcm-sender');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -36,8 +38,8 @@ const weatherCache = new Map();
 const WEATHER_TTL_MS = 10 * 60 * 1000;
 let inFlightBatchPromise = null;
 
-// In-memory store for alerts and field reports
-const alerts = [];
+// Durable alert and device-token repository. Data is persisted beneath backend/data.
+const alertStore = new AlertStore();
 const reports = [];
 
 // WebSocket server for real-time alert synchronization
@@ -475,31 +477,70 @@ app.post('/predict', async (req, res, next) => {
 });
 
 app.get('/alerts', (req, res) => {
-  res.json(alerts);
+  res.json(alertStore.listAlerts());
+});
+
+app.post('/devices', (req, res) => {
+  const { token, platform, zoneIds, appVersion } = req.body || {};
+  if (typeof token !== 'string' || token.trim().length < 20) {
+    return res.status(400).json({ detail: 'A valid FCM registration token is required.' });
+  }
+  if (zoneIds !== undefined && (!Array.isArray(zoneIds) || !zoneIds.every((id) => typeof id === 'string'))) {
+    return res.status(400).json({ detail: 'zoneIds must be an array of zone identifiers.' });
+  }
+  const device = alertStore.registerDevice({ token: token.trim(), platform, zoneIds: zoneIds || [], appVersion });
+  res.status(201).json({ id: device.id, registeredAt: device.updatedAt });
+});
+
+app.get('/devices', (req, res) => {
+  // Tokens are secrets: operational visibility only exposes aggregate counts.
+  const devices = alertStore.listDevices();
+  res.json({ registeredDevices: devices.length, androidDevices: devices.filter((d) => d.platform === 'android').length });
 });
 
 app.post('/alerts', async (req, res, next) => {
   try {
-    const { zoneId } = req.body || {};
+    const { zoneId, level, message, channel = 'push' } = req.body || {};
     const seed = ZONE_SEEDS.find((s) => s.id === zoneId);
     if (!seed) return res.status(404).json({ detail: 'Zone not found' });
 
+    const normalizedLevel = level === 'casual' ? 'low' : level;
+    if (normalizedLevel && !['low', 'moderate', 'high', 'critical'].includes(normalizedLevel)) {
+      return res.status(400).json({ detail: 'level must be low, moderate, high, or critical.' });
+    }
+    if (message !== undefined && (typeof message !== 'string' || !message.trim() || message.length > 500)) {
+      return res.status(400).json({ detail: 'message must contain 1 to 500 characters.' });
+    }
+
     const zone = await buildZoneResponse(seed);
-    const alert = {
-      id: `a-${Date.now()}`,
+    const alert = alertStore.createAlert({
       zoneId: zone.id,
       zoneName: zone.name,
-      level: zone.riskLevel,
-      message: `${zone.riskLevel.toUpperCase()} ALERT: Hazard index at ${zone.name} is ${zone.riskScore}%. Precipitation: ${zone.rainfall24h}mm/24h. Take immediate precaution.`,
-      channel: 'dashboard',
-      createdAt: new Date().toISOString(),
-    };
-    alerts.unshift(alert);
+      level: normalizedLevel || zone.riskLevel,
+      message: message?.trim() || `${zone.riskLevel.toUpperCase()} ALERT: Hazard index at ${zone.name} is ${zone.riskScore}%. Precipitation: ${zone.rainfall24h}mm/24h. Take immediate precaution.`,
+      channel,
+    });
     
     // Broadcast alert to all connected WebSocket clients (mobile app + web dashboard)
     broadcastAlert(alert);
-    
-    res.json(alert);
+
+    // A failed/absent FCM configuration is saved and returned honestly; alerts
+    // are never lost just because the push provider is temporarily unavailable.
+    let fcm;
+    try {
+      fcm = await sendFcmAlert(alert, alertStore.matchingDevices(alert.zoneId));
+    } catch (error) {
+      console.error('[FCM] Delivery attempt failed:', error.message);
+      fcm = { status: 'not_sent', reason: 'firebase_delivery_error', attempted: alertStore.matchingDevices(alert.zoneId).length, delivered: 0, failed: 0 };
+    }
+    if (fcm.invalidTokens?.length) alertStore.removeTokens(fcm.invalidTokens);
+    const delivery = {
+      status: fcm.status,
+      attemptedAt: new Date().toISOString(),
+      fcm: { ...fcm, invalidTokens: undefined },
+    };
+    const persistedAlert = alertStore.updateAlert(alert.id, { delivery });
+    res.status(201).json(persistedAlert);
   } catch (err) {
     next(err);
   }

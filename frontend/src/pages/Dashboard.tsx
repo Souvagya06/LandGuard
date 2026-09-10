@@ -22,7 +22,7 @@ export default function Dashboard() {
   const selectedZone = zones.find((z) => z.id === activeId)
 
   const alertMutation = useMutation({
-    mutationFn: triggerAlert,
+    mutationFn: (zone: Zone) => triggerAlert({ zoneId: zone.id, channel: 'dashboard' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
 

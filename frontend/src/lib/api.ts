@@ -32,13 +32,21 @@ export async function fetchAlerts(): Promise<AlertItem[]> {
   }
 }
 
-export async function triggerAlert(zone: Zone): Promise<AlertItem> {
+export async function triggerAlert(payload: {
+  zoneId: string
+  level?: 'low' | 'moderate' | 'high' | 'critical' | 'casual'
+  message?: string
+  channel?: 'push' | 'sms' | 'dashboard' | 'popup' | 'app' | 'sms-app'
+}): Promise<AlertItem> {
   const res = await fetch(`${API_BASE}/alerts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ zoneId: zone.id }),
+    body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new Error('Failed to trigger alert')
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || 'Failed to dispatch alert')
+  }
   return res.json()
 }
 

@@ -33,8 +33,13 @@ export interface AlertItem {
   zoneName: string
   level: RiskLevel
   message: string
-  channel: 'push' | 'sms' | 'dashboard'
+  channel: 'push' | 'sms' | 'dashboard' | 'popup' | 'app' | 'sms-app'
   createdAt: string
+  delivery?: {
+    status: 'pending' | 'sent' | 'partially_sent' | 'not_sent'
+    attemptedAt: string | null
+    fcm?: { attempted: number; delivered: number; failed: number; reason?: string }
+  }
 }
 
 export interface FieldReport {
