@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+const WebSocket = require('ws');
 const { evaluateRisk } = require('./services/risk-model');
 const { loadMonitoringLocations } = require('./services/model-locations');
 
@@ -37,6 +39,73 @@ let inFlightBatchPromise = null;
 // In-memory store for alerts and field reports
 const alerts = [];
 const reports = [];
+
+// WebSocket server for real-time alert synchronization
+const wsClients = new Set();
+let wss = null;
+
+function initializeWebSocket(server) {
+  wss = new WebSocket.Server({ server });
+  
+  wss.on('connection', (ws) => {
+    const clientId = `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    wsClients.add(ws);
+    console.log(`[WebSocket] Client connected: ${clientId} (Total: ${wsClients.size})`);
+    
+    // Send initial connection confirmation
+    ws.send(JSON.stringify({
+      type: 'connection',
+      message: 'Connected to LandGuard alert system',
+      clientId,
+      timestamp: new Date().toISOString()
+    }));
+    
+    ws.on('message', (data) => {
+      try {
+        const message = JSON.parse(data);
+        console.log(`[WebSocket] Message from ${clientId}:`, message.type);
+        
+        if (message.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+        }
+      } catch (err) {
+        console.error(`[WebSocket] Error parsing message from ${clientId}:`, err.message);
+      }
+    });
+    
+    ws.on('close', () => {
+      wsClients.delete(ws);
+      console.log(`[WebSocket] Client disconnected: ${clientId} (Total: ${wsClients.size})`);
+    });
+    
+    ws.on('error', (err) => {
+      console.error(`[WebSocket] Error on ${clientId}:`, err.message);
+      wsClients.delete(ws);
+    });
+  });
+}
+
+// Broadcast alert to all connected WebSocket clients
+function broadcastAlert(alert) {
+  if (!wss) return;
+  
+  const alertMessage = JSON.stringify({
+    type: 'alert',
+    data: alert,
+    timestamp: new Date().toISOString()
+  });
+  
+  let successCount = 0;
+  wsClients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(alertMessage, (err) => {
+        if (!err) successCount++;
+      });
+    }
+  });
+  
+  console.log(`[WebSocket] Alert broadcast to ${successCount}/${wsClients.size} connected clients`);
+}
 
 function getCacheKey(lat, lng) {
   return `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
@@ -426,6 +495,10 @@ app.post('/alerts', async (req, res, next) => {
       createdAt: new Date().toISOString(),
     };
     alerts.unshift(alert);
+    
+    // Broadcast alert to all connected WebSocket clients (mobile app + web dashboard)
+    broadcastAlert(alert);
+    
     res.json(alert);
   } catch (err) {
     next(err);
@@ -474,6 +547,11 @@ app.use((err, req, res, next) => {
   res.status(err.statusCode || 500).json({ detail: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+// Create HTTP server and attach WebSocket
+const server = http.createServer(app);
+initializeWebSocket(server);
+
+server.listen(PORT, () => {
   console.log(`[LandGuard] Node.js backend with Dual-Agent ML running on http://127.0.0.1:${PORT}`);
+  console.log(`[LandGuard] WebSocket alert system available at ws://127.0.0.1:${PORT}`);
 });
