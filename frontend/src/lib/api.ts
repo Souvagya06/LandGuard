@@ -1,18 +1,18 @@
 import type { Zone, AlertItem } from '../types'
-import { mockZones, mockAlerts } from '../data/mockZones'
+import { mockAlerts } from '../data/mockZones'
 
 // Configure VITE_API_URL to use the FastAPI / Express service in production.
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
 
 export async function fetchZones(): Promise<Zone[]> {
-  try {
-    const res = await fetch(`${API_BASE}/zones`)
-    if (!res.ok) throw new Error('Failed to fetch zones')
-    const data = await res.json()
-    return Array.isArray(data) && data.length > 0 ? data : mockZones
-  } catch {
-    return mockZones
+  const res = await fetch(`${API_BASE}/zones`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || 'Live zone telemetry is unavailable')
   }
+  const data = await res.json()
+  if (!Array.isArray(data) || !data.length) throw new Error('No live zones were returned')
+  return data
 }
 
 export async function fetchZone(id: string): Promise<Zone | undefined> {

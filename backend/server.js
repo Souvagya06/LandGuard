@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const http = require('http');
 const WebSocket = require('ws');
 const { evaluateRisk } = require('./services/risk-model');
@@ -113,18 +114,6 @@ function getCacheKey(lat, lng) {
   return `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
 }
 
-// Generate realistic baseline precipitation fallback (with seasonal fluctuation)
-function generateFallbackPrecipitation(lat, lng) {
-  const hourly = new Array(336).fill(0);
-  // Mild background baseline so models evaluate with realistic geomorphology
-  const seed = Math.abs(Math.sin(lat * 12.9898 + lng * 78.233)) * 43758.5453;
-  const baseRain = (seed % 6.0) + 1.2;
-  for (let i = 140; i < 168; i++) {
-    hourly[i] = Math.round((Math.sin(i / 3.0) * baseRain * 0.4 + baseRain * 0.5) * 10) / 10;
-  }
-  return { hourly: { precipitation: hourly } };
-}
-
 // Helper: Open-Meteo Multi-Coordinate Batch Weather Client
 async function fetchLiveWeatherBatch(locations) {
   const now = Date.now();
@@ -150,23 +139,20 @@ async function fetchLiveWeatherBatch(locations) {
 
   // Deduplicate in-flight network requests
   if (inFlightBatchPromise) {
-    try {
-      await inFlightBatchPromise;
-    } catch {
-      // Ignored - fallback handling below
-    }
+    await inFlightBatchPromise;
     for (const loc of missing) {
       const key = getCacheKey(loc.lat, loc.lng);
       if (weatherCache.has(key)) {
         results.set(key, weatherCache.get(key).data);
       } else {
-        results.set(key, generateFallbackPrecipitation(loc.lat, loc.lng));
+        throw new Error(`Live rainfall data is unavailable for ${loc.name || key}.`);
       }
     }
     return results;
   }
 
-  // Fetch all missing coordinates in ONE single batched HTTP request
+  // Fetch trailing observations relative to the current hour, rather than a
+  // calendar window that has to be interpreted using a fixed array index.
   const lats = missing.map((m) => Number(m.lat).toFixed(4)).join(',');
   const lngs = missing.map((m) => Number(m.lng).toFixed(4)).join(',');
 
@@ -174,8 +160,8 @@ async function fetchLiveWeatherBatch(locations) {
     latitude: lats,
     longitude: lngs,
     hourly: 'precipitation',
-    past_days: '7',
-    forecast_days: '7',
+    past_hours: '168',
+    forecast_hours: '1',
     timezone: 'UTC',
   });
 
@@ -196,19 +182,19 @@ async function fetchLiveWeatherBatch(locations) {
 
       missing.forEach((loc, idx) => {
         const key = getCacheKey(loc.lat, loc.lng);
-        const data = dataArray[idx] || generateFallbackPrecipitation(loc.lat, loc.lng);
+        const data = dataArray[idx];
+        if (!data?.hourly?.time || !data?.hourly?.precipitation) {
+          throw new Error(`Open-Meteo returned no hourly precipitation for ${loc.name || key}`);
+        }
         weatherCache.set(key, { timestamp: now, data });
         results.set(key, data);
       });
       console.log(`[WeatherClient] Successfully fetched live Open-Meteo batch data for ${missing.length} monitoring locations.`);
     } catch (err) {
-      console.warn(`[WeatherClient] Batch fetch error (${err.message}). Using resilient regional profiles.`);
-      missing.forEach((loc) => {
-        const key = getCacheKey(loc.lat, loc.lng);
-        const fallback = generateFallbackPrecipitation(loc.lat, loc.lng);
-        weatherCache.set(key, { timestamp: now, data: fallback });
-        results.set(key, fallback);
-      });
+      // Never invent rainfall. Calling routes return an explicit error instead
+      // of displaying synthetic values as real observations.
+      console.error(`[WeatherClient] Batch fetch error (${err.message}). Live rainfall is unavailable.`);
+      throw new Error(`Live rainfall data is unavailable: ${err.message}`);
     } finally {
       clearTimeout(timeout);
       inFlightBatchPromise = null;
@@ -228,31 +214,47 @@ async function fetchLiveWeather(lat, lng) {
     if (now - entry.timestamp < WEATHER_TTL_MS) return entry.data;
   }
   const batchRes = await fetchLiveWeatherBatch([{ lat, lng }]);
-  return batchRes.get(key) || generateFallbackPrecipitation(lat, lng);
+  const data = batchRes.get(key);
+  if (!data) throw new Error('Live rainfall data is unavailable for this coordinate.');
+  return data;
 }
 
 // Helper: Compute rolling rainfall features for ML Agent B
 function computeRainfallFeatures(weatherData) {
   const precip = weatherData?.hourly?.precipitation || [];
-  const totalHours = precip.length || 336;
-  const midPoint = totalHours >= 168 ? 168 : Math.max(0, totalHours - 24);
+  const timestamps = weatherData?.hourly?.time || [];
+  if (!precip.length || precip.length !== timestamps.length) {
+    throw new Error('Live weather response contains no usable hourly precipitation series.');
+  }
 
-  // 24h recent precipitation
-  const past24h = precip.slice(Math.max(0, midPoint - 24), midPoint);
+  const now = Date.now();
+  // Open-Meteo timestamps are UTC because the request specifies timezone=UTC.
+  // Each precipitation value is the preceding hour's total, so include the
+  // latest completed timestamp and calculate all windows from that point.
+  const observedIndex = timestamps.reduce((latest, timestamp, index) => {
+    const time = Date.parse(`${timestamp}Z`);
+    return Number.isFinite(time) && time <= now ? index : latest;
+  }, -1);
+  if (observedIndex < 23) {
+    throw new Error('Live weather response does not contain 24 completed hourly observations.');
+  }
+  const endExclusive = observedIndex + 1;
+  const trailing = (hours) => precip.slice(Math.max(0, endExclusive - hours), endExclusive);
+
+  const past24h = trailing(24);
   const rain1d = Math.round((past24h.reduce((a, b) => a + b, 0) || 0) * 10) / 10;
 
-  // 3-day sum (72h)
-  const past72h = precip.slice(Math.max(0, midPoint - 72), midPoint);
+  const past72h = trailing(72);
   const rain3dSum = Math.round((past72h.reduce((a, b) => a + b, 0) || (rain1d * 2.2)) * 10) / 10;
 
-  // 7-day sum (168h)
-  const past168h = precip.slice(Math.max(0, midPoint - 168), midPoint);
+  const past168h = trailing(168);
   const rain7dSum = Math.round((past168h.reduce((a, b) => a + b, 0) || (rain3dSum * 1.8)) * 10) / 10;
 
-  // Daily totals for max and API
+  // Daily-equivalent totals, ending at the same observation.
   const daily = [];
-  for (let i = 0; i < Math.min(midPoint, precip.length); i += 24) {
-    const chunk = precip.slice(i, i + 24);
+  const recentHourly = trailing(168);
+  for (let i = 0; i < recentHourly.length; i += 24) {
+    const chunk = recentHourly.slice(i, i + 24);
     daily.push(chunk.reduce((a, b) => a + b, 0));
   }
   const recentDays = daily.slice(-7);
@@ -384,7 +386,8 @@ app.get('/zones', async (req, res, next) => {
     const weatherMap = await fetchLiveWeatherBatch(ZONE_SEEDS);
     const zones = ZONE_SEEDS.map((seed) => {
       const key = getCacheKey(seed.lat, seed.lng);
-      const weather = weatherMap.get(key) || generateFallbackPrecipitation(seed.lat, seed.lng);
+      const weather = weatherMap.get(key);
+      if (!weather) throw new Error(`Live rainfall data is unavailable for ${seed.name}.`);
       return evaluateZoneWithWeather(seed, weather);
     });
     res.json(zones);
