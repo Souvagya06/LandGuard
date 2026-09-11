@@ -102,6 +102,14 @@ const defaultMessage = (zone: Zone, warningType: WarningType) => {
   return `${label}: High-risk alert for ${zone.name} (${zone.district} District). ${action}`
 }
 
+// Match the Analysis panel's “Live Landslide Probability Rate”. `landslideRate`
+// is the dynamic rate calculated from precipitation, antecedent moisture and
+// InSAR deformation; `riskScore` is only a composite operational score.
+const landslideRiskPercent = (zone: Zone) => {
+  const probability = zone.landslideRate ?? zone.landslideProbability ?? zone.riskScore
+  return probability <= 1 ? Math.round(probability * 100) : Math.round(probability)
+}
+
 export default function SendAlert() {
   const [searchParams] = useSearchParams()
   const initialZoneFromUrl = searchParams.get('zone') ?? ''
@@ -172,11 +180,7 @@ export default function SendAlert() {
 
   const selectedWarningOption = warningOptions.find((opt) => opt.value === warningType)
   const selectedDeliveryOption = deliveryOptions.find((opt) => opt.value === deliveryMethod)
-  const selectedRiskPercent = selectedZone
-    ? selectedZone.riskScore <= 1
-      ? Math.round(selectedZone.riskScore * 100)
-      : Math.round(selectedZone.riskScore)
-    : 0
+  const selectedRiskPercent = selectedZone ? landslideRiskPercent(selectedZone) : 0
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 dashboard-page pb-12">
@@ -216,7 +220,7 @@ export default function SendAlert() {
               </label>
               {selectedZone && (
                 <span className="font-mono text-xs text-[#57b79e]">
-                  Dashboard Risk: <strong className="uppercase">{selectedZone.riskLevel}</strong> ({selectedRiskPercent}%)
+                  Landslide risk rate: <strong className="uppercase">{selectedZone.riskLevel}</strong> ({selectedRiskPercent}%)
                 </span>
               )}
             </div>
@@ -231,10 +235,10 @@ export default function SendAlert() {
                 className="w-full appearance-none rounded-lg border border-[#3a453f] bg-[#0b0f0e] px-4 py-3.5 text-base font-medium text-[#eef2ef] outline-none transition-colors focus:border-[#e0913f] focus:ring-1 focus:ring-[#e0913f]"
               >
                 {zones.map((zone) => {
-                  const score = zone.riskScore <= 1 ? Math.round(zone.riskScore * 100) : Math.round(zone.riskScore)
+                  const score = landslideRiskPercent(zone)
                   return (
                     <option key={zone.id} value={zone.id}>
-                      {zone.name} — {zone.district} District ({score}% Risk · {zone.riskLevel.toUpperCase()})
+                      {zone.name} — {zone.district} District ({score}% Landslide Risk Rate · {zone.riskLevel.toUpperCase()})
                     </option>
                   )
                 })}
