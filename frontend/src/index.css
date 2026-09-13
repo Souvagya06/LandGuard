@@ -71,6 +71,20 @@ a {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
 }
 
+.risk-zone-blink {
+  animation: risk-zone-blink 1.15s ease-in-out infinite;
+}
+
+.risk-zone-ring-blink {
+  animation: risk-zone-ring-blink 1.15s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.risk-zone-name-blink {
+  animation: risk-zone-name-blink 1.15s ease-in-out infinite;
+}
+
 .map-frame .leaflet-control-zoom a,
 .map-frame .leaflet-control-attribution {
   border-color: #d7ddd9;
@@ -85,4 +99,19 @@ a {
 @keyframes dashboard-enter {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes risk-zone-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+@keyframes risk-zone-ring-blink {
+  0%, 100% { opacity: 0.95; transform: scale(0.85); }
+  50% { opacity: 0.15; transform: scale(1.35); }
+}
+
+@keyframes risk-zone-name-blink {
+  0%, 100% { color: #f87171; opacity: 1; }
+  50% { color: #dc2626; opacity: 0.35; }
 }
