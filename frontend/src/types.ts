@@ -53,3 +53,58 @@ export interface FieldReport {
   status: 'pending_sync' | 'synced' | 'verified'
   createdAt: string
 }
+
+export interface BackendHealth {
+  status: string
+  runtime: string
+  mlEngine: string
+  monitoringLocations: number
+  spatialFeatureSource: string
+  version: string
+}
+
+export interface DeviceStats {
+  registeredDevices: number
+  androidDevices: number
+}
+
+export interface SimulationParams {
+  lat: number
+  lng: number
+  elevation_m?: number
+  slope_deg?: number
+  aspect_deg?: number
+  ndvi?: number
+  sar_disturbance?: number
+  rain_1d?: number
+  rain_3d_sum?: number
+  rain_7d_sum?: number
+  rain_14d_sum?: number
+  rain_30d_sum?: number
+  rain_max_7d?: number
+  api_7d?: number
+  roadStatus?: 'open' | 'restricted' | 'blocked'
+}
+
+export interface PredictionResponse {
+  lat: number
+  lng: number
+  risk_score: number
+  risk_level: RiskLevel
+  susceptibility_score: number
+  trigger_probability: number
+  rainfall24h: number
+  rainfall7d: number
+  factors: RiskFactor[]
+  explanation: string
+  simulated: boolean
+  timestamp: string
+}
+
+export interface WebSocketAlertMessage {
+  type: 'alert' | 'connection' | 'pong'
+  message?: string
+  data?: AlertItem
+  clientId?: string
+  timestamp: string
+}
