@@ -30,6 +30,6 @@ ml/models/*.joblib
 # --- Docker ---
 *.log
 
-# --- FCM ---
+# --- FCM & FSA ---
 backend/firebase-service-account.json
 backend/.env
