@@ -6,7 +6,7 @@ import MetricCard from '../components/MetricCard'
 import RiskMap from '../components/RiskMap'
 import ZonePanel from '../components/ZonePanel'
 import AnalysisPanel from '../components/AnalysisPanel'
-import { riskMeta } from '../lib/risk'
+import { isLandslideProne, riskMeta } from '../lib/risk'
 
 export default function Dashboard() {
   const queryClient = useQueryClient()
@@ -86,7 +86,13 @@ export default function Dashboard() {
                     : 'border-[#26302d] hover:border-[#3a453f]'
                 }`}
               >
-                <p className="truncate text-xs font-medium text-[#eef2ef]">{zone.name}</p>
+                <p className={`truncate text-xs font-medium ${
+                  isLandslideProne(zone.landslideRate ?? zone.riskScore)
+                    ? 'risk-zone-name-blink text-red-400'
+                    : 'text-[#eef2ef]'
+                }`}>
+                  {zone.name}
+                </p>
                 <p className="text-[11px] text-[#93a19a]">{zone.landslideRate ?? zone.riskScore}% landslide risk rate</p>
               </button>
             ))}
