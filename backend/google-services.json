@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "87508114506",
+    "project_id": "landguard-a4620",
+    "storage_bucket": "landguard-a4620.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:87508114506:android:ef6d0c715003246b77dab3",
+        "android_client_info": {
+          "package_name": "com.example.landguard"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1spN4K24qJEhNkMHDHI2jZGWFQ4o-4-w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

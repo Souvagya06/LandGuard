@@ -483,7 +483,7 @@ app.get('/alerts', (req, res) => {
   res.json(alertStore.listAlerts());
 });
 
-app.post('/devices', (req, res) => {
+app.post(['/devices', '/api/devices/register'], (req, res) => {
   const { token, platform, zoneIds, appVersion } = req.body || {};
   if (typeof token !== 'string' || token.trim().length < 20) {
     return res.status(400).json({ detail: 'A valid FCM registration token is required.' });
@@ -491,14 +491,14 @@ app.post('/devices', (req, res) => {
   if (zoneIds !== undefined && (!Array.isArray(zoneIds) || !zoneIds.every((id) => typeof id === 'string'))) {
     return res.status(400).json({ detail: 'zoneIds must be an array of zone identifiers.' });
   }
-  const device = alertStore.registerDevice({ token: token.trim(), platform, zoneIds: zoneIds || [], appVersion });
-  res.status(201).json({ id: device.id, registeredAt: device.updatedAt });
+  const device = alertStore.registerDevice({ token: token.trim(), platform: platform || 'android', zoneIds: zoneIds || [], appVersion });
+  res.status(201).json({ id: device.id, ok: true, registeredAt: device.updatedAt });
 });
 
-app.get('/devices', (req, res) => {
+app.get(['/devices', '/api/devices'], (req, res) => {
   // Tokens are secrets: operational visibility only exposes aggregate counts.
   const devices = alertStore.listDevices();
-  res.json({ registeredDevices: devices.length, androidDevices: devices.filter((d) => d.platform === 'android').length });
+  res.json({ registeredDevices: devices.length, androidDevices: devices.filter((d) => (d.platform || 'android') === 'android').length });
 });
 
 app.post('/alerts', async (req, res, next) => {
