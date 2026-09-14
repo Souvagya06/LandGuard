@@ -202,3 +202,25 @@ input[type=range]::-webkit-slider-thumb {
 input[type=range]::-webkit-slider-thumb:hover {
   transform: scale(1.2);
 }
+/* Leaflet Custom Overrides */
+.leaflet-popup-content-wrapper {
+  background: #0d1211 !important;
+  color: #f0f5f2 !important;
+  border: 1px solid #1f2b27 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+  font-family: var(--font-body) !important;
+}
+
+.leaflet-popup-tip {
+  background: #0d1211 !important;
+}
+
+.leaflet-container {
+  background: #0a0d0c !important;
+}
+
+/* Cyber tile theme — darkens plain OSM tiles client-side, no API key needed */
+.cyber-dark-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.88) contrast(0.92) saturate(0.22);
+}

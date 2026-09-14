@@ -24,21 +24,22 @@ interface Props {
 
 type MapLayerType = 'satellite' | 'dark' | 'streets'
 
-const MAP_LAYERS: Record<MapLayerType, { name: string; url: string; attribution: string }> = {
+const MAP_LAYERS: Record<MapLayerType, { name: string; url: string; attribution: string; className?: string }> = {
   satellite: {
     name: 'Satellite (Esri)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
   },
   dark: {
-    name: 'Cyber Dark (Carto)',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    name: 'Cyber Dark (OSM)',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    className: 'cyber-dark-tiles',
   },
   streets: {
     name: 'Terrain / Topo',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
   },
 }
 
