@@ -1,6 +1,7 @@
 import type { Zone, AlertItem, FieldReport, BackendHealth, DeviceStats, SimulationParams, PredictionResponse } from '../types'
 import { mockAlerts } from '../data/mockZones'
 
+// Configure VITE_API_URL to use the FastAPI / Express service in production.
 export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
 
 export async function fetchZones(): Promise<Zone[]> {
