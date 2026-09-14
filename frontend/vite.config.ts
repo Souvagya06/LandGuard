@@ -12,6 +12,8 @@ export default defineConfig({
         dashboard: resolve(__dirname, 'dashboard.html'),
         alerts: resolve(__dirname, 'alerts.html'),
         sendAlert: resolve(__dirname, 'send-alert.html'),
+        simulate: resolve(__dirname, 'simulate.html'),
+        reports: resolve(__dirname, 'reports.html'),
         about: resolve(__dirname, 'about.html'),
       },
     },

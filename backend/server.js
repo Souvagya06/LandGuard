@@ -480,6 +480,9 @@ app.post('/predict', async (req, res, next) => {
 });
 
 app.get('/alerts', (req, res) => {
+  if (req.headers.accept?.includes('text/html') && fs.existsSync(FRONTEND_DIST_PATH)) {
+    return res.sendFile(path.join(FRONTEND_DIST_PATH, 'alerts.html'));
+  }
   res.json(alertStore.listAlerts());
 });
 
@@ -550,6 +553,9 @@ app.post('/alerts', async (req, res, next) => {
 });
 
 app.get('/reports', (req, res) => {
+  if (req.headers.accept?.includes('text/html') && fs.existsSync(FRONTEND_DIST_PATH)) {
+    return res.sendFile(path.join(FRONTEND_DIST_PATH, 'reports.html'));
+  }
   res.json(reports);
 });
 
@@ -577,6 +583,11 @@ if (fs.existsSync(FRONTEND_DIST_PATH)) {
 
   app.get('/dashboard', (req, res) => res.sendFile(path.join(FRONTEND_DIST_PATH, 'dashboard.html')));
   app.get('/alerts', (req, res) => res.sendFile(path.join(FRONTEND_DIST_PATH, 'alerts.html')));
+  app.get('/simulate', (req, res) => res.sendFile(path.join(FRONTEND_DIST_PATH, 'simulate.html')));
+  app.get('/send-alert', (req, res) => res.sendFile(path.join(FRONTEND_DIST_PATH, 'send-alert.html')));
+  app.get('/reports.html', (req, res) => res.sendFile(path.join(FRONTEND_DIST_PATH, 'reports.html')));
+  app.get('/simulate.html', (req, res) => res.sendFile(path.join(FRONTEND_DIST_PATH, 'simulate.html')));
+  app.get('/send-alert.html', (req, res) => res.sendFile(path.join(FRONTEND_DIST_PATH, 'send-alert.html')));
 } else {
   app.get('/', (req, res) => {
     res.status(503).json({

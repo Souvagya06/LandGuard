@@ -1,117 +1,226 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
-/*
-  LandGuard AI — shared design tokens
-  Drop this into your React app's global stylesheet (e.g. src/index.css)
-  so the dashboard and alerts pages match index.html / about.html.
-*/
-:root{
+:root {
   /* backgrounds */
-  --bg:#0b0f0e;
-  --bg-panel:#121716;
-  --bg-elevated:#171d1b;
+  --bg: #070a09;
+  --bg-panel: #0d1211;
+  --bg-elevated: #131a18;
+  --bg-card: rgba(18, 24, 22, 0.75);
 
   /* lines & text */
-  --line:#26302d;
-  --line-soft:#1c2422;
-  --text:#eef2ef;
-  --text-muted:#93a19a;
-  --text-faint:#5c6a64;
+  --line: #1f2b27;
+  --line-highlight: #2c3e38;
+  --line-soft: #141c19;
+  --text: #f0f5f2;
+  --text-muted: #9bb0a6;
+  --text-faint: #596b63;
 
   /* accents */
-  --amber:#e0913f;   /* highlights, secondary CTA */
-  --teal:#57b79e;    /* primary actions, stable/safe */
-  --blue:#6f97c9;    /* satellite / data-source accents */
+  --amber: #f59e0b;
+  --teal: #10b981;
+  --cyan: #06b6d4;
+  --blue: #3b82f6;
 
   /* risk levels */
-  --critical:#d9663f;
-  --moderate:#e0a339;
-  --stable:#4fae86;
+  --critical: #ef4444;
+  --moderate: #f59e0b;
+  --stable: #10b981;
 
-  --radius:3px;
+  --radius: 6px;
 
   /* type */
-  --font-display:'Space Grotesk', sans-serif; /* headings */
-  --font-body:'IBM Plex Sans', sans-serif;    /* body copy */
-  --font-mono:'IBM Plex Mono', monospace;     /* coordinates, %s, data labels */
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
 }
 
 html {
   background: var(--bg);
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  background:
-    linear-gradient(rgba(87, 183, 158, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(87, 183, 158, 0.035) 1px, transparent 1px),
-    var(--bg);
-  background-size: 32px 32px;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 80% 80% at 50% -20%, rgba(16, 185, 129, 0.08), transparent),
+    linear-gradient(rgba(16, 185, 129, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 36px 36px, 36px 36px;
   color: var(--text);
   font-family: var(--font-body);
 }
 
-button,
-a {
+/* Custom Tactical Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090e0c;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2c26;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2e453c;
+}
+
+button, a {
   -webkit-tap-highlight-color: transparent;
 }
 
-.dashboard-page {
-  animation: dashboard-enter 420ms ease-out both;
+/* Glassmorphism Panel */
+.glass-panel {
+  background: rgba(13, 18, 17, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
 }
 
-.dashboard-intro {
-  border-left: 2px solid var(--teal);
-  padding-left: 1rem;
+.glass-panel-glow {
+  background: rgba(13, 18, 17, 0.9);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.08), inset 0 0 15px rgba(16, 185, 129, 0.03);
+}
+
+/* Glowing Neon Elements */
+.glow-teal {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+}
+.glow-amber {
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.3);
+}
+.glow-crimson {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+}
+.glow-cyan {
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.35);
+}
+
+/* Animations */
+.dashboard-page {
+  animation: dashboard-enter 350ms ease-out both;
 }
 
 .map-frame {
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  position: relative;
 }
 
 .risk-zone-blink {
-  animation: risk-zone-blink 1.15s ease-in-out infinite;
+  animation: risk-zone-blink 1.2s ease-in-out infinite;
 }
 
 .risk-zone-ring-blink {
-  animation: risk-zone-ring-blink 1.15s ease-out infinite;
+  animation: risk-zone-ring-blink 1.4s cubic-bezier(0.24, 0, 0.38, 1) infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
 
 .risk-zone-name-blink {
-  animation: risk-zone-name-blink 1.15s ease-in-out infinite;
+  animation: risk-zone-name-blink 1.2s ease-in-out infinite;
 }
 
-.map-frame .leaflet-control-zoom a,
-.map-frame .leaflet-control-attribution {
-  border-color: #d7ddd9;
-  background: rgba(255, 255, 255, 0.92);
-  color: #53605a;
+/* Live Ticker Tape */
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
-.map-frame .leaflet-control-attribution a {
-  color: #277b69;
+.animate-ticker {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: ticker-scroll 32s linear infinite;
+}
+
+.animate-ticker:hover {
+  animation-play-state: paused;
 }
 
 @keyframes dashboard-enter {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes risk-zone-blink {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.2; }
+  50% { opacity: 0.25; }
 }
 
 @keyframes risk-zone-ring-blink {
-  0%, 100% { opacity: 0.95; transform: scale(0.85); }
-  50% { opacity: 0.15; transform: scale(1.35); }
+  0% { opacity: 0.95; transform: scale(0.8); }
+  50% { opacity: 0.4; transform: scale(1.4); }
+  100% { opacity: 0; transform: scale(1.9); }
 }
 
 @keyframes risk-zone-name-blink {
   0%, 100% { color: #f87171; opacity: 1; }
-  50% { color: #dc2626; opacity: 0.35; }
+  50% { color: #dc2626; opacity: 0.4; }
+}
+
+/* Leaflet Custom Overrides */
+.leaflet-popup-content-wrapper {
+  background: #0d1211 !important;
+  color: #f0f5f2 !important;
+  border: 1px solid #1f2b27 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+  font-family: var(--font-body) !important;
+}
+
+.leaflet-popup-tip {
+  background: #0d1211 !important;
+}
+
+.leaflet-container {
+  background: #0a0d0c !important;
+}
+
+/* Range Sliders for Simulator */
+input[type=range] {
+  appearance: none;
+  background: #17211d;
+  height: 6px;
+  border-radius: 4px;
+}
+input[type=range]::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #10b981;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+  border: 2px solid #064e3b;
+  transition: transform 0.1s ease;
+}
+input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+/* Leaflet Custom Overrides */
+.leaflet-popup-content-wrapper {
+  background: #0d1211 !important;
+  color: #f0f5f2 !important;
+  border: 1px solid #1f2b27 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+  font-family: var(--font-body) !important;
+}
+
+.leaflet-popup-tip {
+  background: #0d1211 !important;
+}
+
+.leaflet-container {
+  background: #0a0d0c !important;
+}
+
+/* Cyber tile theme — darkens plain OSM tiles client-side, no API key needed */
+.cyber-dark-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.88) contrast(0.92) saturate(0.22);
 }
