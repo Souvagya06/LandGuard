@@ -7,7 +7,7 @@ import RiskMap from '../components/RiskMap'
 import ZonePanel from '../components/ZonePanel'
 import AnalysisPanel from '../components/AnalysisPanel'
 import ReportSubmitModal from '../components/ReportSubmitModal'
-import { isLandslideProne, riskMeta } from '../lib/risk'
+import { isLandslideProne, levelFromScore, mapColor } from '../lib/risk'
 import {
   ShieldAlert,
   CloudRain,
@@ -195,9 +195,10 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 max-h-56 overflow-y-auto pr-1">
               {filteredSettlements.map((zone) => {
-                const isCritical = isLandslideProne(zone.landslideRate ?? zone.riskScore)
+                const riskRate = zone.landslideRate ?? zone.riskScore
+                const isCritical = isLandslideProne(riskRate)
+                const markerColor = mapColor(levelFromScore(riskRate))
                 const isSelected = zone.id === selectedId
-                const meta = riskMeta[zone.riskLevel]
 
                 return (
                   <button
@@ -210,7 +211,10 @@ export default function Dashboard() {
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${isCritical ? 'animate-ping' : ''}`} />
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${isCritical ? 'animate-ping' : ''}`}
+                        style={{ backgroundColor: markerColor }}
+                      />
                       <span className="font-mono text-[9px] text-[#596b63]">{zone.district.split(' ')[0]}</span>
                     </div>
 
