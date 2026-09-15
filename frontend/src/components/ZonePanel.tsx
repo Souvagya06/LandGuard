@@ -62,13 +62,22 @@ export default function ZonePanel({ zone, onTriggerAlert, sending, onOpenReportM
   return (
     <div className="glass-panel rounded-xl p-5 space-y-4 shadow-xl border border-[#1f2b27]">
       {/* Zone Header */}
-      <div className="flex items-start justify-between border-b border-[#1f2b27] pb-3.5">
-        <div>
+      <div className="flex items-start justify-between gap-3 border-b border-[#1f2b27] pb-3.5">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-[#f0f5f2]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            <h2
+              className="max-w-[18rem] text-lg font-bold text-[#f0f5f2] leading-tight"
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
               {zone.name}
             </h2>
-            <span className="font-mono text-[11px] text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">
+            <span className="font-mono text-[11px] text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30 shrink-0">
               {zone.id}
             </span>
           </div>
@@ -79,10 +88,13 @@ export default function ZonePanel({ zone, onTriggerAlert, sending, onOpenReportM
           </p>
         </div>
 
-        <div className="text-right">
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${meta.bg} ${meta.text} border border-current/20 shadow-sm`}>
-            <span className={`h-2 w-2 rounded-full ${meta.dot} animate-ping`} />
-            {meta.label} · {zone.riskScore}%
+        <div className="text-right shrink-0">
+          <span className={`inline-flex flex-col items-center justify-center rounded-full px-3 py-1.5 text-[11px] font-bold leading-tight ${meta.bg} ${meta.text} border border-current/20 shadow-sm`}>
+            <span className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${meta.dot} animate-ping`} />
+              {meta.label}
+            </span>
+            <span>{zone.riskScore}%</span>
           </span>
           <p className="text-[10px] text-[#596b63] mt-1 font-mono">
             Updated: {new Date(zone.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
