@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fetchZones, triggerAlert, fetchReports } from '../lib/api'
 import type { Zone } from '../types'
@@ -8,6 +8,7 @@ import ZonePanel from '../components/ZonePanel'
 import AnalysisPanel from '../components/AnalysisPanel'
 import ReportSubmitModal from '../components/ReportSubmitModal'
 import { isLandslideProne, levelFromScore, mapColor } from '../lib/risk'
+import { playHazardAlertSound } from '../lib/audio'
 import {
   ShieldAlert,
   CloudRain,
@@ -15,7 +16,10 @@ import {
   MapPin,
   RefreshCw,
   AlertTriangle,
-  Search
+  Search,
+  Volume2,
+  X,
+  ArrowUpRight
 } from 'lucide-react'
 
 export default function Dashboard() {
@@ -23,6 +27,9 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = useState<string | undefined>()
   const [reportModalZoneId, setReportModalZoneId] = useState<string | null>(null)
   const [settlementSearch, setSettlementSearch] = useState('')
+  const [directorySort, setDirectorySort] = useState<'risk' | 'name' | 'district'>('risk')
+  const [riskAlertZone, setRiskAlertZone] = useState<Zone | null>(null)
+  const announcedRiskZones = useRef(new Set<string>())
 
   const { data: zones = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['zones'],
@@ -36,8 +43,30 @@ export default function Dashboard() {
     refetchInterval: 15000,
   })
 
-  const activeId = selectedId ?? zones[0]?.id
+  const activeId = selectedId ?? zones.find((zone) => zone.riskLevel === 'critical')?.id ?? zones[0]?.id
   const selectedZone = zones.find((z) => z.id === activeId)
+
+  const highRiskZones = useMemo(
+    () => zones
+      .filter((zone) => isLandslideProne(zone.landslideRate ?? zone.riskScore))
+      .sort((a, b) => (b.landslideRate ?? b.riskScore) - (a.landslideRate ?? a.riskScore)),
+    [zones],
+  )
+
+  useEffect(() => {
+    const activeIds = new Set(highRiskZones.map((zone) => zone.id))
+    announcedRiskZones.current.forEach((id) => {
+      if (!activeIds.has(id)) announcedRiskZones.current.delete(id)
+    })
+
+    const newlyElevated = highRiskZones.find((zone) => !announcedRiskZones.current.has(zone.id))
+    highRiskZones.forEach((zone) => announcedRiskZones.current.add(zone.id))
+
+    if (newlyElevated) {
+      setRiskAlertZone(newlyElevated)
+      playHazardAlertSound(levelFromScore(newlyElevated.landslideRate ?? newlyElevated.riskScore))
+    }
+  }, [highRiskZones])
 
   const alertMutation = useMutation({
     mutationFn: (zone: Zone) => triggerAlert({ zoneId: zone.id, channel: 'dashboard' }),
@@ -62,13 +91,55 @@ export default function Dashboard() {
   }, [zones])
 
   const filteredSettlements = useMemo(() => {
-    if (!settlementSearch) return zones
+    const filtered = !settlementSearch ? zones : (() => {
     const q = settlementSearch.toLowerCase()
     return zones.filter((z) => z.name.toLowerCase().includes(q) || z.district.toLowerCase().includes(q))
-  }, [zones, settlementSearch])
+    })()
+    return [...filtered].sort((a, b) => directorySort === 'risk'
+      ? (b.landslideRate ?? b.riskScore) - (a.landslideRate ?? a.riskScore)
+      : directorySort === 'name' ? a.name.localeCompare(b.name) : a.district.localeCompare(b.district))
+  }, [zones, settlementSearch, directorySort])
 
   return (
     <div className="dashboard-page space-y-6">
+      {riskAlertZone && (
+        <div className="risk-alert-toast fixed right-4 top-20 z-[1200] w-[min(27rem,calc(100vw-2rem))] rounded-xl border border-red-400/60 bg-[#2a0e0d]/95 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.5),0_0_30px_rgba(239,68,68,0.2)] backdrop-blur-xl" role="alert">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500/20 text-red-300">
+              <AlertTriangle className="h-5 w-5 animate-pulse" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-display text-sm font-bold tracking-wide text-red-100">Authority risk notification</p>
+                <button onClick={() => setRiskAlertZone(null)} className="rounded p-1 text-red-300 hover:bg-red-500/20 hover:text-white" aria-label="Dismiss risk notification">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-red-100/80">
+                {riskAlertZone.name} has crossed the 50% landslide risk threshold.
+              </p>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="font-mono text-lg font-bold text-red-300">
+                  {riskAlertZone.landslideRate ?? riskAlertZone.riskScore}% risk
+                </span>
+                <button
+                  onClick={() => {
+                    setSelectedId(riskAlertZone.id)
+                    setRiskAlertZone(null)
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-red-400"
+                >
+                  Inspect zone <ArrowUpRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-1.5 border-t border-red-300/15 pt-2 text-[10px] text-red-200/60">
+            <Volume2 className="h-3 w-3" /> Audible danger notification issued
+          </div>
+        </div>
+      )}
+
       {/* Live Emergency Ticker Marquee */}
       {urgentZones.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-red-500/40 bg-red-950/20 py-1.5 px-3 text-xs backdrop-blur-md flex items-center gap-3">
@@ -128,22 +199,62 @@ export default function Dashboard() {
         </div>
       )}
 
+      <section className="glass-panel-glow rounded-xl border border-red-500/25 p-4 sm:p-5" aria-labelledby="authority-alerts-heading">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500/15 text-red-400">
+              <ShieldAlert className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 id="authority-alerts-heading" className="font-display text-sm font-bold text-[#f0f5f2]">Authority alert center</h2>
+              <p className="mt-0.5 text-xs text-[#9bb0a6]">Every zone at or above the 50% intervention threshold.</p>
+            </div>
+          </div>
+          <span className="rounded-full border border-red-500/35 bg-red-500/10 px-2.5 py-1 font-mono text-[10px] font-bold text-red-300">
+            {highRiskZones.length} ACTIVE {highRiskZones.length === 1 ? 'ZONE' : 'ZONES'}
+          </span>
+        </div>
+        {highRiskZones.length > 0 ? (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {highRiskZones.map((zone) => {
+              const rate = zone.landslideRate ?? zone.riskScore
+              return (
+                <button
+                  key={zone.id}
+                  onClick={() => setSelectedId(zone.id)}
+                  className="group flex items-center justify-between rounded-lg border border-red-500/20 bg-red-950/20 px-3 py-2.5 text-left transition-colors hover:border-red-400/60 hover:bg-red-500/10"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-semibold text-red-100">{zone.name}</span>
+                    <span className="mt-0.5 block truncate text-[10px] text-red-200/60">{zone.district} · {zone.roadStatus} road</span>
+                  </span>
+                  <span className="ml-3 shrink-0 font-mono text-sm font-bold text-red-300">{rate}%</span>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300">No intervention-level zones detected in the latest telemetry.</p>
+        )}
+      </section>
+
       {/* Metrics Row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           label="High / Critical Zones"
           value={metrics.high}
           hint={`${metrics.critical} immediate danger`}
           icon={<ShieldAlert className="h-4 w-4" />}
-          trend={`${metrics.critical > 0 ? 'Urgent' : 'Nominal'}`}
+          trend={`${metrics.critical > 0 ? 'Immediate action' : metrics.high > 0 ? 'Elevated watch' : 'No escalation'}`}
           trendColor={metrics.critical > 0 ? 'red' : 'emerald'}
+          dominant
         />
         <MetricCard
           label="Monitored Settlements"
           value={metrics.villages}
           hint="19 trained spatial coordinates"
           icon={<MapPin className="h-4 w-4" />}
-          trend="100% Active"
+          trend="Reporting"
           trendColor="emerald"
         />
         <MetricCard
@@ -151,7 +262,7 @@ export default function Dashboard() {
           value={`${metrics.maxRain} / ${metrics.avgRain}mm`}
           hint="Open-Meteo batch stream"
           icon={<CloudRain className="h-4 w-4" />}
-          trend={metrics.maxRain > 70 ? 'High' : 'Normal'}
+          trend={metrics.maxRain > 70 ? 'Intense rain' : 'Within watch'}
           trendColor={metrics.maxRain > 70 ? 'amber' : 'cyan'}
         />
         <MetricCard
@@ -159,7 +270,7 @@ export default function Dashboard() {
           value={metrics.blockedRoads}
           hint={`${zones.filter(z => z.roadStatus === 'restricted').length} restricted single-lane`}
           icon={<Navigation className="h-4 w-4" />}
-          trend={metrics.blockedRoads > 0 ? 'Disrupted' : 'Clear'}
+          trend={metrics.blockedRoads > 0 ? 'Diversion active' : 'No closures'}
           trendColor={metrics.blockedRoads > 0 ? 'red' : 'emerald'}
         />
       </div>
@@ -178,9 +289,12 @@ export default function Dashboard() {
           {/* Settlement Search & Quick-Select Grid */}
           <div className="glass-panel rounded-xl p-3 border border-[#1f2b27] space-y-2.5">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-[#9bb0a6] font-semibold">
+              <span className="text-[10px] uppercase tracking-wider text-[#9bb0a6] font-semibold">
                 Monitored Settlements Directory ({filteredSettlements.length})
               </span>
+              <div className="hidden sm:flex items-center gap-1 text-[10px]">
+                {(['risk', 'name', 'district'] as const).map((sort) => <button key={sort} onClick={() => setDirectorySort(sort)} className={`rounded px-1.5 py-1 capitalize ${directorySort === sort ? 'bg-cyan-500/15 text-cyan-300' : 'text-[#9bb0a6] hover:text-white'}`}>By {sort}</button>)}
+              </div>
               <div className="flex items-center gap-1.5 rounded border border-[#1f2b27] bg-[#090d0c] px-2 py-1 text-xs w-48">
                 <Search className="h-3 w-3 text-[#596b63]" />
                 <input
@@ -198,7 +312,8 @@ export default function Dashboard() {
                 const riskRate = zone.landslideRate ?? zone.riskScore
                 const isCritical = isLandslideProne(riskRate)
                 const markerColor = mapColor(levelFromScore(riskRate))
-                const isSelected = zone.id === selectedId
+                const isSelected = zone.id === activeId
+                const [place, qualifier = 'Monitoring sector'] = zone.name.split('—').map((part) => part.trim())
 
                 return (
                   <button
@@ -207,7 +322,7 @@ export default function Dashboard() {
                     className={`rounded-lg border p-2.5 text-left transition-all relative ${
                       isSelected
                         ? 'border-emerald-500/80 bg-emerald-500/10 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
-                        : 'border-[#1f2b27] bg-[#090d0c]/70 hover:border-[#2c3e38] hover:bg-[#111715]'
+                        : `${isCritical ? 'border-l-2 border-l-red-500' : riskRate >= 50 ? 'border-l-2 border-l-orange-400' : 'opacity-65'} border-[#1f2b27] bg-[#090d0c]/70 hover:border-[#2c3e38] hover:bg-[#111715]`
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -218,11 +333,13 @@ export default function Dashboard() {
                       <span className="font-mono text-[9px] text-[#596b63]">{zone.district.split(' ')[0]}</span>
                     </div>
 
-                    <p className={`truncate text-xs font-semibold ${
-                      isCritical ? 'text-red-400 risk-zone-name-blink' : 'text-[#f0f5f2]'
+                    <p className={`text-xs font-semibold ${
+                      isCritical ? 'text-red-400' : 'text-[#f0f5f2]'
                     }`}>
-                      {zone.name}
+                      {place}
                     </p>
+                    <p className="mt-0.5 truncate text-[9px] text-[#9bb0a6]">{qualifier}</p>
+                    <p className="mt-0.5 text-[9px] text-[#596b63]">{zone.district}</p>
 
                     <div className="mt-1 flex items-center justify-between text-[10px] font-mono">
                       <span className="text-[#9bb0a6]">{zone.landslideRate ?? zone.riskScore}% Rate</span>

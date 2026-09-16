@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { fetchAlerts } from '../lib/api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { approveAlert, fetchAlerts } from '../lib/api'
 import { riskMeta } from '../lib/risk'
 import type { RiskLevel } from '../types'
 import {
@@ -31,11 +31,16 @@ export default function Alerts() {
   const [channelFilter, setChannelFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   const { data: alerts = [], isLoading, isError } = useQuery({
     queryKey: ['alerts'],
     queryFn: fetchAlerts,
     refetchInterval: 8000,
+  })
+  const approveMutation = useMutation({
+    mutationFn: approveAlert,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
 
   const filteredAlerts = alerts.filter((alert) => {
@@ -206,6 +211,11 @@ export default function Alerts() {
                         <span className="font-mono text-[10px] text-[#596b63] border border-[#1f2b27] rounded px-1.5 py-0.5">
                           {alert.channel.toUpperCase()}
                         </span>
+                        {alert.status === 'awaiting_approval' && (
+                          <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                            AWAITING COMMAND APPROVAL
+                          </span>
+                        )}
                       </div>
 
                       <p className="text-xs text-[#c2d1cb] leading-relaxed max-w-3xl font-sans">
@@ -241,6 +251,15 @@ export default function Alerts() {
                       {isCopied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                       {isCopied ? 'Copied' : 'Copy'}
                     </button>
+                    {alert.status === 'awaiting_approval' && (
+                      <button
+                        onClick={() => approveMutation.mutate(alert.id)}
+                        disabled={approveMutation.isPending}
+                        className="rounded bg-amber-500 px-2 py-1 text-[11px] font-bold text-[#070a09] disabled:opacity-50"
+                      >
+                        {approveMutation.isPending ? 'Approving…' : 'Approve & dispatch'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

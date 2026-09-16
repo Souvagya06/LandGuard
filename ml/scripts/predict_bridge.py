@@ -96,9 +96,9 @@ def predict(input_data: dict, agent_a_bundle, agent_b_bundle) -> dict:
 
     if risk_score >= 75:
         risk_level = "critical"
-    elif risk_score >= 55:
+    elif risk_score >= 50:
         risk_level = "high"
-    elif risk_score >= 30:
+    elif risk_score >= 25:
         risk_level = "moderate"
     else:
         risk_level = "low"

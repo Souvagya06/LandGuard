@@ -50,6 +50,24 @@ export async function triggerAlert(payload: {
   return res.json()
 }
 
+export async function approveAlert(id: string): Promise<AlertItem> {
+  const res = await fetch(`${API_BASE}/alerts/${id}/approve`, { method: 'POST' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || 'Failed to approve alert')
+  }
+  return res.json()
+}
+
+export async function verifyReport(id: string, verdict: 'verified' | 'rejected', note = ''): Promise<FieldReport> {
+  const res = await fetch(`${API_BASE}/reports/${id}/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verdict, note }) })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || 'Failed to review report')
+  }
+  return res.json()
+}
+
 export async function fetchReports(): Promise<FieldReport[]> {
   try {
     const res = await fetch(`${API_BASE}/reports`)
