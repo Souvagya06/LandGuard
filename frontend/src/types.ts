@@ -25,6 +25,8 @@ export interface Zone {
   factors: RiskFactor[]
   explanation?: string
   updatedAt: string
+  modelSource?: 'trained_python' | 'portable_heuristic'
+  modelVersion?: string
 }
 
 export interface AlertItem {
@@ -35,6 +37,8 @@ export interface AlertItem {
   message: string
   channel: 'push' | 'sms' | 'dashboard' | 'popup' | 'app' | 'sms-app'
   createdAt: string
+  status?: 'awaiting_approval' | 'approved' | 'dispatched'
+  approvedAt?: string
   delivery?: {
     status: 'pending' | 'sent' | 'partially_sent' | 'not_sent'
     attemptedAt: string | null
@@ -50,7 +54,7 @@ export interface FieldReport {
   photoDataUrl?: string
   lat: number
   lng: number
-  status: 'pending_sync' | 'synced' | 'verified'
+  status: 'pending_sync' | 'pending_review' | 'synced' | 'verified' | 'rejected'
   createdAt: string
 }
 

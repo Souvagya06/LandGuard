@@ -5,10 +5,14 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const http = require('http');
 const WebSocket = require('ws');
-const { evaluateRisk } = require('./services/risk-model');
+const { evaluateTrainedRisk } = require('./services/risk-model');
 const { loadMonitoringLocations } = require('./services/model-locations');
 const { AlertStore } = require('./services/alert-store');
 const { sendFcmAlert } = require('./services/fcm-sender');
+const { RISK_BANDS } = require('./services/risk-config');
+const { sign, requireRole } = require('./services/auth');
+const { securityHeaders, createRateLimiter } = require('./services/security');
+const { applyDemoScenario } = require('./services/demo-scenario');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -16,17 +20,22 @@ const FRONTEND_DIST_PATH = path.resolve(__dirname, '..', 'frontend', 'dist');
 const FEATURE_TABLE_PATH = path.resolve(__dirname, '..', 'ml', 'data', 'processed', 'feature_table.csv');
 
 app.use(express.json({ limit: '15mb' }));
+app.disable('x-powered-by');
+app.use(securityHeaders);
+app.use(createRateLimiter({ windowMs: 60_000, max: Number(process.env.RATE_LIMIT_PER_MINUTE || 180) }));
+const allowedOrigins = new Set([
+  'http://localhost:5173', 'http://127.0.0.1:5173',
+  'http://localhost:5174', 'http://127.0.0.1:5174',
+  // The production-style build is served by this Express process itself.
+  'http://localhost:8000', 'http://127.0.0.1:8000',
+  ...(process.env.CORS_ORIGINS || '').split(',').map((origin) => origin.trim()).filter(Boolean),
+]);
 app.use(
   cors({
-    origin: [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'http://localhost:5174',
-      'http://127.0.0.1:5174',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      '*',
-    ],
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      callback(new Error('Origin is not allowed by CORS policy.'));
+    },
   })
 );
 
@@ -41,7 +50,6 @@ let inFlightBatchPromise = null;
 
 // Durable alert and device-token repository. Data is persisted beneath backend/data.
 const alertStore = new AlertStore();
-const reports = [];
 
 // WebSocket server for real-time alert synchronization
 const wsClients = new Set();
@@ -268,7 +276,7 @@ function computeRainfallFeatures(weatherData) {
   }
   api7d = Math.round(api7d * 10) / 10;
 
-  return {
+  return applyDemoScenario({
     rain_1d: rain1d,
     rain_3d_sum: rain3dSum,
     rain_7d_sum: rain7dSum,
@@ -276,7 +284,7 @@ function computeRainfallFeatures(weatherData) {
     rain_30d_sum: Math.round(rain7dSum * 3.4 * 10) / 10,
     rain_max_7d: rainMax7d,
     api_7d: api7d,
-  };
+  });
 }
 
 // Helper: Build explainability and factor breakdown
@@ -311,7 +319,7 @@ function generateExplanation(zone, rainFeatures, mlResult) {
 }
 
 // Assemble full zone response with ML + Weather
-function evaluateZoneWithWeather(seed, weatherData) {
+async function evaluateZoneWithWeather(seed, weatherData) {
   const rainFeatures = computeRainfallFeatures(weatherData);
 
   const mlPayload = {
@@ -319,7 +327,7 @@ function evaluateZoneWithWeather(seed, weatherData) {
     ...rainFeatures,
   };
 
-  const mlResult = evaluateRisk(mlPayload);
+  const mlResult = await evaluateTrainedRisk(mlPayload);
   const factors = computeFactors(seed, rainFeatures, mlResult);
   const explanation = generateExplanation(seed, rainFeatures, mlResult);
 
@@ -358,6 +366,8 @@ function evaluateZoneWithWeather(seed, weatherData) {
     roadStatus: seed.roadStatus,
     factors,
     explanation,
+    modelSource: mlResult.modelSource,
+    modelVersion: mlResult.modelVersion,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -373,11 +383,24 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     runtime: 'Node.js Express',
-    mlEngine: 'Native JavaScript dual-agent risk model (Agent A + Agent B)',
+    mlEngine: process.env.MODEL_RUNTIME === 'python' ? 'Trained Python Agent A + Agent B artifacts' : 'Portable heuristic fallback (set MODEL_RUNTIME=python for trained artifacts)',
     monitoringLocations: ZONE_SEEDS.length,
     spatialFeatureSource: 'ml/data/processed/feature_table.csv',
-    version: '2.2.0',
+    riskBands: RISK_BANDS,
+    security: { authenticationRequired: process.env.NODE_ENV === 'production', rateLimitPerMinute: Number(process.env.RATE_LIMIT_PER_MINUTE || 180) },
+    version: '3.0.0',
   });
+});
+
+// Development-only token minting keeps the local demo usable. Production uses
+// identity-provider issued HS256 tokens signed with AUTH_SECRET instead.
+app.post('/auth/dev-token', (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.status(404).end();
+  const role = ['viewer', 'field_officer', 'operator', 'incident_commander', 'admin'].includes(req.body?.role) ? req.body.role : 'admin';
+  if (!process.env.AUTH_SECRET) return res.status(503).json({ detail: 'Set AUTH_SECRET to issue development tokens.' });
+  const expiresInSeconds = 8 * 60 * 60;
+  const token = sign({ sub: `dev-${role}`, name: `Development ${role}`, role, exp: Math.floor(Date.now() / 1000) + expiresInSeconds });
+  res.json({ token, role, expiresInSeconds });
 });
 
 app.get('/zones', async (req, res, next) => {
@@ -390,7 +413,7 @@ app.get('/zones', async (req, res, next) => {
       if (!weather) throw new Error(`Live rainfall data is unavailable for ${seed.name}.`);
       return evaluateZoneWithWeather(seed, weather);
     });
-    res.json(zones);
+    res.json(await Promise.all(zones));
   } catch (err) {
     next(err);
   }
@@ -408,7 +431,7 @@ app.get('/zones/:id', async (req, res, next) => {
 });
 
 // Custom On-Demand ML Prediction (Arbitrary Lat/Lng or Simulation)
-app.post('/predict', async (req, res, next) => {
+app.post('/predict', createRateLimiter({ windowMs: 60_000, max: 30 }), async (req, res, next) => {
   try {
     const {
       lat = 27.5,
@@ -428,6 +451,11 @@ app.post('/predict', async (req, res, next) => {
       roadStatus = 'open',
     } = req.body || {};
 
+    const numericInRange = (value, min, max) => Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max;
+    if (!numericInRange(lat, -90, 90) || !numericInRange(lng, -180, 180) || !numericInRange(slope_deg, 0, 90) || !numericInRange(ndvi, 0, 1)) {
+      return res.status(400).json({ detail: 'Coordinates, slope_deg, and ndvi are outside valid ranges.' });
+    }
+    if (!['open', 'restricted', 'blocked'].includes(roadStatus)) return res.status(400).json({ detail: 'Invalid roadStatus.' });
     let rainFeatures;
     if (rain_1d !== undefined) {
       // User simulated rainfall
@@ -458,8 +486,8 @@ app.post('/predict', async (req, res, next) => {
       ...rainFeatures,
     };
 
-    const mlResult = evaluateRisk(mlPayload);
-    const mockZone = { name: 'Target Coordinate', district: `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E`, ...mlPayload };
+    const mlResult = await evaluateTrainedRisk(mlPayload);
+    const mockZone = { name: 'Target Coordinate', district: `${Number(lat).toFixed(3)}°N, ${Number(lng).toFixed(3)}°E`, ...mlPayload };
     const factors = computeFactors(mockZone, rainFeatures, mlResult);
     const explanation = generateExplanation(mockZone, rainFeatures, mlResult);
 
@@ -471,6 +499,8 @@ app.post('/predict', async (req, res, next) => {
       rainfall7d: rainFeatures.rain_7d_sum,
       factors,
       explanation,
+      modelSource: mlResult.modelSource,
+      modelVersion: mlResult.modelVersion,
       simulated: rain_1d !== undefined,
       timestamp: new Date().toISOString(),
     });
@@ -486,7 +516,7 @@ app.get('/alerts', (req, res) => {
   res.json(alertStore.listAlerts());
 });
 
-app.post(['/devices', '/api/devices/register'], (req, res) => {
+app.post(['/devices', '/api/devices/register'], requireRole('field_officer'), (req, res) => {
   const { token, platform, zoneIds, appVersion } = req.body || {};
   if (typeof token !== 'string' || token.trim().length < 20) {
     return res.status(400).json({ detail: 'A valid FCM registration token is required.' });
@@ -498,13 +528,30 @@ app.post(['/devices', '/api/devices/register'], (req, res) => {
   res.status(201).json({ id: device.id, ok: true, registeredAt: device.updatedAt });
 });
 
-app.get(['/devices', '/api/devices'], (req, res) => {
+app.get(['/devices', '/api/devices'], requireRole('operator'), (req, res) => {
   // Tokens are secrets: operational visibility only exposes aggregate counts.
   const devices = alertStore.listDevices();
   res.json({ registeredDevices: devices.length, androidDevices: devices.filter((d) => (d.platform || 'android') === 'android').length });
 });
 
-app.post('/alerts', async (req, res, next) => {
+async function dispatchAlert(alert) {
+  broadcastAlert(alert);
+  let fcm;
+  try {
+    fcm = await sendFcmAlert(alert, alertStore.matchingDevices(alert.zoneId));
+  } catch (error) {
+    console.error('[FCM] Delivery attempt failed:', error.message);
+    fcm = { status: 'not_sent', reason: 'firebase_delivery_error', attempted: alertStore.matchingDevices(alert.zoneId).length, delivered: 0, failed: 0 };
+  }
+  if (fcm.invalidTokens?.length) alertStore.removeTokens(fcm.invalidTokens);
+  return alertStore.updateAlert(alert.id, {
+    status: 'dispatched',
+    dispatchedAt: new Date().toISOString(),
+    delivery: { status: fcm.status, attemptedAt: new Date().toISOString(), fcm: { ...fcm, invalidTokens: undefined } },
+  });
+}
+
+app.post('/alerts', requireRole('operator'), async (req, res, next) => {
   try {
     const { zoneId, level, message, channel = 'push' } = req.body || {};
     const seed = ZONE_SEEDS.find((s) => s.id === zoneId);
@@ -519,61 +566,81 @@ app.post('/alerts', async (req, res, next) => {
     }
 
     const zone = await buildZoneResponse(seed);
+    const requiresApproval = ['high', 'critical'].includes(normalizedLevel || zone.riskLevel);
     const alert = alertStore.createAlert({
       zoneId: zone.id,
       zoneName: zone.name,
       level: normalizedLevel || zone.riskLevel,
       message: message?.trim() || `${zone.riskLevel.toUpperCase()} ALERT: Hazard index at ${zone.name} is ${zone.riskScore}%. Precipitation: ${zone.rainfall24h}mm/24h. Take immediate precaution.`,
       channel,
+      status: requiresApproval ? 'awaiting_approval' : 'approved',
+      createdBy: { id: req.actor.sub, name: req.actor.name || req.actor.sub, role: req.actor.role },
+      modelSnapshot: { riskScore: zone.riskScore, riskLevel: zone.riskLevel, updatedAt: zone.updatedAt },
     });
-    
-    // Broadcast alert to all connected WebSocket clients (mobile app + web dashboard)
-    broadcastAlert(alert);
-
-    // A failed/absent FCM configuration is saved and returned honestly; alerts
-    // are never lost just because the push provider is temporarily unavailable.
-    let fcm;
-    try {
-      fcm = await sendFcmAlert(alert, alertStore.matchingDevices(alert.zoneId));
-    } catch (error) {
-      console.error('[FCM] Delivery attempt failed:', error.message);
-      fcm = { status: 'not_sent', reason: 'firebase_delivery_error', attempted: alertStore.matchingDevices(alert.zoneId).length, delivered: 0, failed: 0 };
-    }
-    if (fcm.invalidTokens?.length) alertStore.removeTokens(fcm.invalidTokens);
-    const delivery = {
-      status: fcm.status,
-      attemptedAt: new Date().toISOString(),
-      fcm: { ...fcm, invalidTokens: undefined },
-    };
-    const persistedAlert = alertStore.updateAlert(alert.id, { delivery });
+    alertStore.audit({ action: 'alert.created', actor: req.actor, entityType: 'alert', entityId: alert.id, metadata: { level: alert.level, status: alert.status } });
+    const persistedAlert = requiresApproval ? alert : await dispatchAlert(alert);
+    if (!requiresApproval) alertStore.audit({ action: 'alert.dispatched', actor: req.actor, entityType: 'alert', entityId: alert.id });
     res.status(201).json(persistedAlert);
   } catch (err) {
     next(err);
   }
 });
 
+app.post('/alerts/:id/approve', requireRole('incident_commander'), async (req, res, next) => {
+  try {
+    const alert = alertStore.listAlerts().find((item) => item.id === req.params.id);
+    if (!alert) return res.status(404).json({ detail: 'Alert not found.' });
+    if (alert.status !== 'awaiting_approval') return res.status(409).json({ detail: 'Alert is not awaiting approval.' });
+    const approved = alertStore.updateAlert(alert.id, { status: 'approved', approvedAt: new Date().toISOString(), approvedBy: { id: req.actor.sub, name: req.actor.name || req.actor.sub, role: req.actor.role } });
+    alertStore.audit({ action: 'alert.approved', actor: req.actor, entityType: 'alert', entityId: alert.id });
+    const dispatched = await dispatchAlert(approved);
+    alertStore.audit({ action: 'alert.dispatched', actor: req.actor, entityType: 'alert', entityId: alert.id });
+    res.json(dispatched);
+  } catch (err) { next(err); }
+});
+
 app.get('/reports', (req, res) => {
   if (req.headers.accept?.includes('text/html') && fs.existsSync(FRONTEND_DIST_PATH)) {
     return res.sendFile(path.join(FRONTEND_DIST_PATH, 'reports.html'));
   }
-  res.json(reports);
+  res.json(alertStore.listReports());
 });
 
-app.post('/reports', (req, res) => {
+app.post('/reports', requireRole('field_officer'), (req, res) => {
   const { zoneId, zoneName, note, photoDataUrl, lat, lng } = req.body || {};
-  const report = {
-    id: `r-${Date.now()}`,
+  if (typeof note !== 'string' || note.trim().length < 10 || note.length > 2_000) {
+    return res.status(400).json({ detail: 'note must contain 10 to 2,000 characters.' });
+  }
+  if (!Number.isFinite(Number(lat)) || Number(lat) < -90 || Number(lat) > 90 || !Number.isFinite(Number(lng)) || Number(lng) < -180 || Number(lng) > 180) {
+    return res.status(400).json({ detail: 'A valid latitude and longitude are required.' });
+  }
+  if (photoDataUrl !== undefined && (typeof photoDataUrl !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(photoDataUrl) || photoDataUrl.length > 10_000_000)) {
+    return res.status(400).json({ detail: 'photoDataUrl must be a JPEG, PNG, or WEBP data URL below 7.5MB.' });
+  }
+  const report = alertStore.createReport({
     zoneId: zoneId || 'custom',
     zoneName: zoneName || 'Field Location',
-    note: note || '',
+    note: note.trim(),
     photoDataUrl,
-    lat: Number(lat) || 0,
-    lng: Number(lng) || 0,
-    status: 'synced',
-    createdAt: new Date().toISOString(),
-  };
-  reports.unshift(report);
-  res.json({ ok: true, report });
+    lat: Number(lat),
+    lng: Number(lng),
+    submittedBy: { id: req.actor.sub, name: req.actor.name || req.actor.sub, role: req.actor.role },
+  });
+  alertStore.audit({ action: 'report.created', actor: req.actor, entityType: 'report', entityId: report.id, metadata: { zoneId: report.zoneId } });
+  res.status(201).json({ ok: true, report });
+});
+
+app.post('/reports/:id/verify', requireRole('operator'), (req, res) => {
+  const verdict = req.body?.verdict;
+  if (!['verified', 'rejected'].includes(verdict)) return res.status(400).json({ detail: 'verdict must be verified or rejected.' });
+  const report = alertStore.updateReport(req.params.id, { status: verdict, verification: { verdict, note: typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : '', verifiedAt: new Date().toISOString(), verifiedBy: { id: req.actor.sub, name: req.actor.name || req.actor.sub, role: req.actor.role } } });
+  if (!report) return res.status(404).json({ detail: 'Report not found.' });
+  alertStore.audit({ action: `report.${verdict}`, actor: req.actor, entityType: 'report', entityId: report.id });
+  res.json(report);
+});
+
+app.get('/audit-events', requireRole('operator'), (req, res) => {
+  res.json(alertStore.listAuditEvents().slice(0, Math.min(500, Number(req.query.limit) || 100)));
 });
 
 // Serve the built React/Vite application from the same origin as the API.

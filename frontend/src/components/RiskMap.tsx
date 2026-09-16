@@ -97,9 +97,9 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
   }
 
   return (
-    <div className="map-frame h-[520px] w-full overflow-hidden rounded-xl border border-[#1f2b27] relative">
+    <div className="map-frame h-130 w-full overflow-hidden rounded-xl border border-[#1f2b27] relative">
       {/* Top Map Control Bar */}
-      <div className="absolute top-3 left-3 right-3 z-[1000] flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+      <div className="absolute top-3 left-3 right-3 z-1000 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
         {/* Search Input */}
         <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-[#2c3e38] bg-[#0d1211]/90 px-3 py-1.5 backdrop-blur-md shadow-lg w-64 sm:w-72">
           <Search className="h-3.5 w-3.5 text-[#9bb0a6]" />
@@ -152,7 +152,7 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
       </div>
 
       {/* Filter Chips Overlay */}
-      <div className="absolute bottom-3 left-3 z-[1000] flex flex-wrap gap-1.5 pointer-events-auto max-w-[80%]">
+      <div className="absolute bottom-3 left-3 z-1000 flex flex-wrap gap-1.5 pointer-events-auto max-w-[80%]">
         <button
           onClick={() => setFilterLevel('all')}
           className={`rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur-md transition-all ${
@@ -196,7 +196,7 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
       </div>
 
       {/* Map Legend on bottom right */}
-      <div className="absolute bottom-3 right-3 z-[1000] hidden sm:flex items-center gap-2 rounded-lg border border-[#1f2b27] bg-[#0d1211]/85 px-3 py-1.5 text-[10px] text-[#9bb0a6] backdrop-blur-md">
+      <div className="absolute bottom-3 right-3 z-1000 hidden sm:flex items-center gap-2 rounded-lg border border-[#1f2b27] bg-[#0d1211]/85 px-3 py-1.5 text-[10px] text-[#9bb0a6] backdrop-blur-md">
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]" /> Critical</span>
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> High</span>
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-yellow-500" /> Moderate</span>

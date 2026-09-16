@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchReports, fetchZones } from '../lib/api'
 import ReportSubmitModal from '../components/ReportSubmitModal'
-import { Camera, MapPin, CheckCircle2, Plus, Search, Image as ImageIcon } from 'lucide-react'
+import { Camera, MapPin, CheckCircle2, Clock3, Plus, Search, Image as ImageIcon } from 'lucide-react'
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -40,6 +40,8 @@ export default function FieldReports() {
       r.zoneId.toLowerCase().includes(q)
     )
   })
+
+  const statusLabel = (status: string) => status === 'verified' ? 'Verified' : status === 'rejected' ? 'Rejected' : status === 'pending_review' ? 'Awaiting review' : 'Synced'
 
   return (
     <div className="space-y-6 dashboard-page">
@@ -160,8 +162,12 @@ export default function FieldReports() {
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <h3 className="font-bold text-sm text-[#f0f5f2]">{report.zoneName}</h3>
-                    <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 shrink-0 flex items-center gap-1">
-                      <CheckCircle2 className="h-2.5 w-2.5" /> Synced
+                    <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold shrink-0 flex items-center gap-1 ${
+                      report.status === 'verified' ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' :
+                      report.status === 'rejected' ? 'bg-red-500/15 border-red-500/30 text-red-300' :
+                      'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                    }`}>
+                      {report.status === 'verified' ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Clock3 className="h-2.5 w-2.5" />} {statusLabel(report.status)}
                     </span>
                   </div>
 

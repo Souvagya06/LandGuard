@@ -1,0 +1,20 @@
+services:
+  landguard-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      MODEL_RUNTIME: python
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in your environment before starting}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-180}
+    ports:
+      - "8000:8000"
+    volumes:
+      - landguard-data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  landguard-data:

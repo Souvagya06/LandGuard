@@ -10,7 +10,7 @@ const crypto = require('crypto');
 class AlertStore {
   constructor(filePath = path.join(__dirname, '..', 'data', 'alerts.json')) {
     this.filePath = filePath;
-    this.state = { alerts: [], devices: [] };
+    this.state = { alerts: [], devices: [], reports: [], auditEvents: [] };
     this.load();
   }
 
@@ -19,6 +19,8 @@ class AlertStore {
       const parsed = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
       this.state.alerts = Array.isArray(parsed.alerts) ? parsed.alerts : [];
       this.state.devices = Array.isArray(parsed.devices) ? parsed.devices : [];
+      this.state.reports = Array.isArray(parsed.reports) ? parsed.reports : [];
+      this.state.auditEvents = Array.isArray(parsed.auditEvents) ? parsed.auditEvents : [];
     } catch (error) {
       if (error.code !== 'ENOENT') throw new Error(`Cannot read alert store: ${error.message}`);
       this.persist();
@@ -34,6 +36,16 @@ class AlertStore {
 
   listAlerts() { return [...this.state.alerts]; }
   listDevices() { return [...this.state.devices]; }
+  listReports() { return [...this.state.reports]; }
+  listAuditEvents() { return [...this.state.auditEvents]; }
+
+  audit({ action, actor, entityType, entityId, metadata = {} }) {
+    const event = { id: crypto.randomUUID(), action, actor: { id: actor?.sub || 'system', name: actor?.name || 'System', role: actor?.role || 'system' }, entityType, entityId, metadata, createdAt: new Date().toISOString() };
+    this.state.auditEvents.unshift(event);
+    this.state.auditEvents = this.state.auditEvents.slice(0, 10_000);
+    this.persist();
+    return event;
+  }
 
   createAlert(payload) {
     const alert = {
@@ -53,6 +65,21 @@ class AlertStore {
     this.state.alerts[index] = { ...this.state.alerts[index], ...patch };
     this.persist();
     return this.state.alerts[index];
+  }
+
+  createReport(payload) {
+    const report = { id: crypto.randomUUID(), status: 'pending_review', verification: null, ...payload, createdAt: new Date().toISOString() };
+    this.state.reports.unshift(report);
+    this.persist();
+    return report;
+  }
+
+  updateReport(id, patch) {
+    const index = this.state.reports.findIndex((report) => report.id === id);
+    if (index === -1) return null;
+    this.state.reports[index] = { ...this.state.reports[index], ...patch };
+    this.persist();
+    return this.state.reports[index];
   }
 
   registerDevice({ token, platform = 'android', zoneIds = [], appVersion }) {
