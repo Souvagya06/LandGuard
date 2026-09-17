@@ -19,7 +19,7 @@ Requires: requests, pandas
 
 Usage:
     python fetch_rainfall_history.py
-    python fetch_rainfall_history.py --start-date 2019-01-01 --end-date 2026-01-01 --grid-size 4
+    python fetch_rainfall_history.py --start-date 2017-01-01 --end-date 2026-12-31 --grid-size 4
 """
 
 import argparse
@@ -135,8 +135,8 @@ def fetch_zone_rainfall(zone_id, points, start_date, end_date):
 
 def parse_args():
     p = argparse.ArgumentParser(description="Fetch historical rainfall for each monitoring zone via Open-Meteo.")
-    p.add_argument("--start-date", default="2019-01-01", help="e.g. 2019-01-01")
-    p.add_argument("--end-date", default="2026-01-01", help="e.g. 2026-01-01")
+    p.add_argument("--start-date", default="2017-01-01", help="e.g. 2017-01-01")
+    p.add_argument("--end-date", default="2026-12-31", help="e.g. 2026-12-31")
     p.add_argument("--grid-size", type=int, default=4, help="NxN sample points per zone (default 4x4=16 points)")
     p.add_argument("--out", default=OUT_PATH_DEFAULT, help="Output CSV path")
     return p.parse_args()

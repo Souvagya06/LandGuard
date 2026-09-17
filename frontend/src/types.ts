@@ -27,6 +27,8 @@ export interface Zone {
   updatedAt: string
   modelSource?: 'trained_python' | 'portable_heuristic'
   modelVersion?: string
+  coverageRadiusM?: number
+  hazardAreaSqKm?: number
 }
 
 export interface AlertItem {

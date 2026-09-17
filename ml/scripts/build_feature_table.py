@@ -168,43 +168,58 @@ def extract_rainfall_features(df_rain: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def generate_landslide_labels(df_fused: pd.DataFrame, catalog_path: str) -> pd.DataFrame:
-    """Assign landslide target labels (0 or 1) based on historical event occurrences and dynamic triggers."""
+def generate_landslide_labels(df_fused: pd.DataFrame, catalog_path: str,
+                              date_window_days: int = 3) -> pd.DataFrame:
+    """Label rows using real matched NASA GLC events, not a derived formula."""
     print("\n--- [3/4] Fusing Historical Landslide Catalog & Target Labels ---")
     df = df_fused.copy()
-
-    # Default target
+    df["date"] = pd.to_datetime(df["date"])
     df["landslide_occurred"] = 0
 
-    if os.path.exists(catalog_path):
-        cat = pd.read_csv(catalog_path)
-        cat_events = cat.dropna(subset=["latitude", "longitude"]).copy()
-        print(f"Loaded {len(cat_events)} historical events from {os.path.basename(catalog_path)}")
+    if not os.path.exists(catalog_path):
+        print(f"WARNING: catalog not found at {catalog_path} - all labels will be 0. "
+              "Run fetch_landslide_catalog.py first.")
+        return df
 
-        # Match events based on zone and high precipitation conditions
-        # For historical training: slope > 20 deg, high cumulative rainfall + high SAR / low NDVI defines landslide occurrence
-        risk_score_approx = (
-            (df["slope_deg"] / 45.0).clip(0, 1) * 0.35 +
-            (df["rain_7d_sum"] / 150.0).clip(0, 1) * 0.35 +
-            (df["api_7d"] / 50.0).clip(0, 1) * 0.15 +
-            (df["sar_disturbance"] / 1.5).clip(0, 1) * 0.10 +
-            ((1.0 - df["ndvi"].clip(0, 1))) * 0.05
-        )
+    cat = pd.read_csv(catalog_path)
+    cat = cat.dropna(subset=["latitude", "longitude", "zone_id"]).copy()
+    cat["event_date"] = pd.to_datetime(cat["event_date"], errors="coerce")
+    cat = cat.dropna(subset=["event_date"])
+    print(f"Loaded {len(cat)} real historical events with valid zone_id + event_date")
 
-        # Trigger threshold for active failure probability
-        # Label landslide events when slope and rainfall exceed critical physical thresholds
-        is_high_risk = (risk_score_approx >= 0.65) & (df["rain_3d_sum"] >= 50.0) & (df["slope_deg"] >= 18.0)
-        df.loc[is_high_risk, "landslide_occurred"] = 1
+    window = pd.Timedelta(days=date_window_days)
+
+    # Match only by monitored zone and event date. Feature values must not
+    # determine the target because they are model inputs.
+    for zone_id, zone_events in cat.groupby("zone_id"):
+        zone_mask = df["zone_id"] == zone_id
+        if not zone_mask.any():
+            continue
+
+        zone_dates = df.loc[zone_mask, "date"]
+        hit = pd.Series(False, index=zone_dates.index)
+        for event_date in zone_events["event_date"]:
+            hit |= (zone_dates - event_date).abs() <= window
+
+        df.loc[hit.index[hit], "landslide_occurred"] = 1
 
     pos_count = int(df["landslide_occurred"].sum())
     neg_count = len(df) - pos_count
-    print(f"Target distribution -> Positive (Landslide): {pos_count} ({pos_count/len(df)*100:.2f}%), Negative: {neg_count}")
+    print(f"Target distribution -> Positive (real matched event): {pos_count} "
+          f"({pos_count/len(df)*100:.3f}%), Negative: {neg_count}")
+
+    if pos_count < 50:
+        print(f"WARNING: only {pos_count} positive rows across the whole dataset. "
+              "This is too few to train a reliable classifier - widen "
+              "date_window_days, fetch more catalog history, or add more zones.")
 
     return df
 
 
 def main():
     parser = argparse.ArgumentParser(description="Build LandGuard unified training feature table.")
+    parser.add_argument("--start-date", default="2017-01-01", help="Optional lower date bound (default: 2017-01-01)")
+    parser.add_argument("--end-date", default="2026-12-31", help="Optional upper date bound (default: 2026-12-31)")
     parser.add_argument("--out", default=OUTPUT_CSV, help="Output CSV path")
     args = parser.parse_args()
 
@@ -232,6 +247,13 @@ def main():
 
     # 4. Generate target labels
     final_df = generate_landslide_labels(fused_df, LANDSLIDES_CSV)
+
+    # Apply date filters (e.g. 2017 to 2026)
+    if args.start_date:
+        final_df = final_df[pd.to_datetime(final_df["date"]) >= pd.Timestamp(args.start_date)].copy()
+    if args.end_date:
+        final_df = final_df[pd.to_datetime(final_df["date"]) <= pd.Timestamp(args.end_date)].copy()
+    print(f"\nFiltered date range: {args.start_date} to {args.end_date} -> {len(final_df):,} rows retained.")
 
     # Data hygiene check
     null_summary = final_df.isnull().sum()

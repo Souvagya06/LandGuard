@@ -1,10 +1,10 @@
 import { Fragment, useState, useEffect } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Tooltip, Popup, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Circle, CircleMarker, Tooltip, Popup, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import type { Zone, FieldReport } from '../types'
 import { isLandslideProne, levelFromScore, mapColor } from '../lib/risk'
-import { Layers, Search, MapPin, Compass } from 'lucide-react'
+import { Layers, Search, MapPin, Compass, Radio } from 'lucide-react'
 
 // Fix default leaflet icons
 delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl
@@ -43,12 +43,15 @@ const MAP_LAYERS: Record<MapLayerType, { name: string; url: string; attribution:
   },
 }
 
+// 5 km broad coverage radius standard across all monitoring zones
+const ZONE_BROAD_RADIUS_METERS = 5000
+
 // Helper component to pan map smoothly when selection changes
 function MapFlyController({ targetLat, targetLng }: { targetLat?: number; targetLng?: number }) {
   const map = useMap()
   useEffect(() => {
     if (targetLat !== undefined && targetLng !== undefined) {
-      map.flyTo([targetLat, targetLng], Math.max(map.getZoom(), 8), { duration: 1.2 })
+      map.flyTo([targetLat, targetLng], Math.max(map.getZoom(), 9), { duration: 1.2 })
     }
   }, [targetLat, targetLng, map])
   return null
@@ -69,9 +72,10 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
   const [searchQuery, setSearchQuery] = useState('')
   const [filterLevel, setFilterLevel] = useState<'all' | 'critical' | 'high' | 'blocked' | 'deform'>('all')
   const [showReports, setShowReports] = useState(true)
+  const [showBroadCorridors, setShowBroadCorridors] = useState(true)
   const [clickedCoord, setClickedCoord] = useState<{ lat: number; lng: number } | null>(null)
 
-  const defaultCenter: [number, number] = [26.2, 92.8]
+  const defaultCenter: [number, number] = [27.8, 93.8]
   const selectedZone = zones.find((z) => z.id === selectedId)
 
   // Filtering zones
@@ -120,7 +124,7 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
           )}
         </div>
 
-        {/* Layer Switcher & Overlays */}
+        {/* Layer Switcher & Broad Zones Toggle */}
         <div className="pointer-events-auto flex items-center gap-1.5 rounded-lg border border-[#2c3e38] bg-[#0d1211]/90 p-1 backdrop-blur-md shadow-lg">
           <Layers className="h-3.5 w-3.5 text-cyan-400 mx-1.5" />
           {(['satellite', 'dark', 'streets'] as MapLayerType[]).map((layer) => (
@@ -137,6 +141,17 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
             </button>
           ))}
           <span className="h-3 w-px bg-[#1f2b27] mx-1" />
+          <button
+            onClick={() => setShowBroadCorridors(!showBroadCorridors)}
+            className={`rounded px-2 py-1 text-[11px] font-medium transition-all flex items-center gap-1 ${
+              showBroadCorridors
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'text-[#596b63] hover:text-[#9bb0a6]'
+            }`}
+            title="Toggle 5 km broad coverage zones"
+          >
+            <Radio className="h-3 w-3" /> Broad Zones (5km)
+          </button>
           <button
             onClick={() => setShowReports(!showReports)}
             className={`rounded px-2 py-1 text-[11px] font-medium transition-all flex items-center gap-1 ${
@@ -206,8 +221,9 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
       {/* Leaflet Map */}
       <MapContainer
         center={selectedZone ? [selectedZone.lat, selectedZone.lng] : defaultCenter}
-        zoom={7}
+        zoom={selectedZone ? 10 : 8}
         scrollWheelZoom={true}
+        attributionControl={false}
         style={{ height: '100%', width: '100%' }}
       >
         <TileLayer
@@ -219,21 +235,6 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
 
         <MapFlyController targetLat={selectedZone?.lat} targetLng={selectedZone?.lng} />
         <MapClickCapture onCoordSelect={handleCoordClick} />
-
-        {/* Selected zone indicator circle */}
-        {selectedZone && (
-          <CircleMarker
-            center={[selectedZone.lat, selectedZone.lng]}
-            radius={28}
-            pathOptions={{
-              color: '#06b6d4',
-              fillOpacity: 0.1,
-              weight: 2,
-              dashArray: '4, 4',
-            }}
-            interactive={false}
-          />
-        )}
 
         {/* Clicked coordinate pin */}
         {clickedCoord && (
@@ -257,54 +258,93 @@ export default function RiskMap({ zones, selectedId, onSelect, fieldReports = []
           </Popup>
         )}
 
-        {/* Zone Markers */}
+        {/* 5 km Broad Coverage Zones */}
         {filteredZones.map((zone) => {
           const riskRate = zone.landslideRate ?? zone.riskScore
           const color = mapColor(levelFromScore(riskRate))
           const isProne = isLandslideProne(riskRate)
           const isSelected = zone.id === selectedId
+          const coverageRadius = ZONE_BROAD_RADIUS_METERS
 
           return (
-            <Fragment key={zone.id}>
+            <Fragment key={`zone-broad-${zone.id}`}>
+              {/* Broad 5 km Geographic Coverage Circle */}
+              {showBroadCorridors && (
+                <Circle
+                  center={[zone.lat, zone.lng]}
+                  radius={coverageRadius}
+                  pathOptions={{
+                    color: isSelected ? '#06b6d4' : color,
+                    fillColor: color,
+                    fillOpacity: isSelected ? 0.24 : isProne ? 0.16 : 0.09,
+                    weight: isSelected ? 2.5 : 1.2,
+                    dashArray: isSelected ? undefined : '4, 6',
+                  }}
+                  eventHandlers={{ click: () => onSelect(zone) }}
+                >
+                  <Tooltip direction="top" offset={[0, -12]} opacity={0.96}>
+                    <div className="text-xs p-1 space-y-1">
+                      <div className="flex items-center justify-between gap-2 border-b border-[#2c3e38] pb-0.5">
+                        <p className="font-bold text-[#f0f5f2]">{zone.name}</p>
+                        <span className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[9px] text-cyan-300">
+                          5.0 km corridor (~78.5 km²)
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-[#9bb0a6]">{zone.district} District</p>
+                      <div className="flex items-center gap-2 pt-0.5 font-mono text-[10px]">
+                        <span className="font-bold" style={{ color }}>{riskRate}% Risk</span>
+                        <span>• {zone.rainfall24h}mm Rain</span>
+                        <span>• {zone.roadStatus.toUpperCase()}</span>
+                      </div>
+                    </div>
+                  </Tooltip>
+                </Circle>
+              )}
+
+              {/* Critical Alert Outer Pulsing Ring */}
               {isProne && (
                 <CircleMarker
                   center={[zone.lat, zone.lng]}
-                  radius={isSelected ? 26 : 20}
+                  radius={isSelected ? 24 : 17}
                   pathOptions={{
                     className: 'risk-zone-ring-blink',
                     color,
                     fillOpacity: 0,
                     opacity: 0.95,
-                    weight: 3,
+                    weight: 2.2,
                   }}
                   interactive={false}
                 />
               )}
 
+              {/* Center Settlement Tactical Pin */}
               <CircleMarker
                 center={[zone.lat, zone.lng]}
-                radius={isSelected ? 15 : 10}
+                radius={isSelected ? 14 : 9}
                 pathOptions={{
                   className: isProne ? 'risk-zone-blink' : undefined,
-                  color,
+                  color: isSelected ? '#ffffff' : color,
                   fillColor: color,
-                  fillOpacity: 0.75,
+                  fillOpacity: 0.9,
                   weight: isSelected ? 3 : 1.5,
                 }}
                 eventHandlers={{ click: () => onSelect(zone) }}
-              >
-                <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-                  <div className="text-xs p-0.5 space-y-0.5">
-                    <p className="font-bold text-[#f0f5f2]">{zone.name}</p>
-                    <p className="text-[10px] text-[#9bb0a6]">{zone.district}</p>
-                    <div className="flex items-center gap-2 pt-0.5 font-mono text-[10px]">
-                      <span className="font-bold" style={{ color }}>{riskRate}% Risk</span>
-                      <span>• {zone.rainfall24h}mm Rain</span>
-                      <span>• {zone.roadStatus.toUpperCase()}</span>
-                    </div>
-                  </div>
-                </Tooltip>
-              </CircleMarker>
+              />
+
+              {/* Selected Zone Focus Halo */}
+              {isSelected && (
+                <Circle
+                  center={[zone.lat, zone.lng]}
+                  radius={coverageRadius + 1500}
+                  pathOptions={{
+                    color: '#06b6d4',
+                    fillOpacity: 0.04,
+                    weight: 1.5,
+                    dashArray: '3, 6',
+                  }}
+                  interactive={false}
+                />
+              )}
             </Fragment>
           )
         })}
