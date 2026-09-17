@@ -31,6 +31,10 @@ ml/models/*.joblib
 # --- Docker ---
 *.log
 
-# --- FCM & FSA ---
+# --- FCM & Credentials ---
 backend/firebase-service-account.json
-backend/.env
+**/google-services.json
+google-services.json
+.env
+.env.local
+*.env

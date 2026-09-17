@@ -82,7 +82,9 @@ def _get_with_retry(params):
             last_error = error
             wait = min(2 ** attempt, 20)
             time.sleep(wait)
-    raise last_error
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Request failed after {MAX_RETRIES} attempts")
 
 
 def fetch_point_year(lat, lon, start_date, end_date):
