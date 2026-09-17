@@ -43,7 +43,7 @@ export default function Dashboard() {
     refetchInterval: 15000,
   })
 
-  const activeId = selectedId ?? zones.find((zone) => zone.riskLevel === 'critical')?.id ?? zones[0]?.id
+  const activeId = selectedId ?? zones.find((zone) => (zone.landslideRate ?? zone.riskScore) >= 75 || zone.riskLevel === 'critical')?.id ?? zones[0]?.id
   const selectedZone = zones.find((z) => z.id === activeId)
 
   const highRiskZones = useMemo(
@@ -74,8 +74,11 @@ export default function Dashboard() {
   })
 
   const metrics = useMemo(() => {
-    const critical = zones.filter((z) => z.riskLevel === 'critical').length
-    const high = zones.filter((z) => (z.landslideRate ?? z.riskScore) >= 50).length
+    const critical = zones.filter((z) => (z.landslideRate ?? z.riskScore) >= 75 || z.riskLevel === 'critical').length
+    const high = zones.filter((z) => {
+      const score = z.landslideRate ?? z.riskScore
+      return score >= 50 && score < 75
+    }).length
     const blockedRoads = zones.filter((z) => z.roadStatus === 'blocked').length
     const highInSAR = zones.filter((z) => (z.deformationRateMm ?? 0) >= 15).length
     const maxRain = zones.length ? Math.max(...zones.map((z) => z.rainfall24h)) : 0
@@ -85,9 +88,9 @@ export default function Dashboard() {
     return { critical, high, blockedRoads, highInSAR, maxRain, avgRain, villages: zones.length }
   }, [zones])
 
-  // Ticker of urgent zones
+  // Ticker of urgent critical zones (>= 75%)
   const urgentZones = useMemo(() => {
-    return zones.filter((z) => z.riskLevel === 'critical' || z.riskLevel === 'high')
+    return zones.filter((z) => (z.landslideRate ?? z.riskScore) >= 75 || z.riskLevel === 'critical')
   }, [zones])
 
   const filteredSettlements = useMemo(() => {
@@ -110,13 +113,13 @@ export default function Dashboard() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <p className="font-display text-sm font-bold tracking-wide text-red-100">Authority risk notification</p>
+                <p className="font-display text-sm font-bold tracking-wide text-red-100">Authority critical risk notification</p>
                 <button onClick={() => setRiskAlertZone(null)} className="rounded p-1 text-red-300 hover:bg-red-500/20 hover:text-white" aria-label="Dismiss risk notification">
                   <X className="h-4 w-4" />
                 </button>
               </div>
               <p className="mt-1 text-xs leading-relaxed text-red-100/80">
-                {riskAlertZone.name} has crossed the 50% landslide risk threshold.
+                {riskAlertZone.name} has crossed the 75% critical landslide risk threshold.
               </p>
               <div className="mt-3 flex items-center justify-between gap-3">
                 <span className="font-mono text-lg font-bold text-red-300">
@@ -207,7 +210,7 @@ export default function Dashboard() {
             </div>
             <div>
               <h2 id="authority-alerts-heading" className="font-display text-sm font-bold text-[#f0f5f2]">Authority alert center</h2>
-              <p className="mt-0.5 text-xs text-[#9bb0a6]">Every zone at or above the 50% intervention threshold.</p>
+              <p className="mt-0.5 text-xs text-[#9bb0a6]">Every zone at or above the 75% critical intervention threshold.</p>
             </div>
           </div>
           <span className="rounded-full border border-red-500/35 bg-red-500/10 px-2.5 py-1 font-mono text-[10px] font-bold text-red-300">
@@ -241,11 +244,11 @@ export default function Dashboard() {
       {/* Metrics Row */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          label="High / Critical Zones"
-          value={metrics.high}
-          hint={`${metrics.critical} immediate danger`}
+          label="Critical Hazard Zones"
+          value={metrics.critical}
+          hint={metrics.critical > 0 ? `${metrics.critical} immediate danger (≥75%)` : '0 immediate danger (≥75%)'}
           icon={<ShieldAlert className="h-4 w-4" />}
-          trend={`${metrics.critical > 0 ? 'Immediate action' : metrics.high > 0 ? 'Elevated watch' : 'No escalation'}`}
+          trend={`${metrics.critical > 0 ? 'Immediate action' : metrics.high > 0 ? `${metrics.high} high watch (50–74%)` : 'No escalation'}`}
           trendColor={metrics.critical > 0 ? 'red' : 'emerald'}
           dominant
         />

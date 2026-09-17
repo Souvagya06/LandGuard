@@ -1,12 +1,14 @@
 const fs = require('fs')
 
 /**
- * High-fidelity, real-world monitoring locations across Arunachal Pradesh districts
- * covering administrative centers, critical highway passes (NH-13 Trans-Arunachal Highway),
- * river basins, and historical landslide vulnerability corridors.
+ * Comprehensive, real-world monitoring zones across all vulnerable mountain districts of Arunachal Pradesh.
+ * Each zone defines a broad geographic catchment / transit corridor with realistic geomorphology,
+ * high-resolution DEM/SAR baselines, and defined coverage radius spanning entire valleys and mountain passes.
  */
 const CURATED_MONITORING_LOCATIONS = [
-  // --- Papum Pare District ---
+  // ==========================================
+  // --- Papum Pare District & Capital Belt ---
+  // ==========================================
   {
     id: 'papum-pare-itanagar-raj-bhavan',
     sourceZoneId: 'papum_pare_arunachal_pradesh',
@@ -22,6 +24,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.28,
     sar_vh_change: 0.32,
     roadStatus: 'open',
+    coverageRadiusM: 4500,
+    hazardAreaSqKm: 63.6,
   },
   {
     id: 'papum-pare-naharlagun-transit',
@@ -38,6 +42,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.34,
     sar_vh_change: 0.38,
     roadStatus: 'open',
+    coverageRadiusM: 4200,
+    hazardAreaSqKm: 55.4,
   },
   {
     id: 'papum-pare-yupia-ridge',
@@ -54,6 +60,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.24,
     sar_vh_change: 0.29,
     roadStatus: 'open',
+    coverageRadiusM: 4800,
+    hazardAreaSqKm: 72.3,
   },
   {
     id: 'papum-pare-doimukh-basin',
@@ -70,6 +78,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.20,
     sar_vh_change: 0.25,
     roadStatus: 'open',
+    coverageRadiusM: 5200,
+    hazardAreaSqKm: 84.9,
   },
   {
     id: 'papum-pare-sagalee-nh13',
@@ -86,6 +96,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.39,
     sar_vh_change: 0.44,
     roadStatus: 'open',
+    coverageRadiusM: 6000,
+    hazardAreaSqKm: 113.1,
   },
   {
     id: 'papum-pare-kimin-foothills',
@@ -102,6 +114,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.31,
     sar_vh_change: 0.36,
     roadStatus: 'open',
+    coverageRadiusM: 5000,
+    hazardAreaSqKm: 78.5,
   },
   {
     id: 'papum-pare-banderdewa-pass',
@@ -118,6 +132,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.22,
     sar_vh_change: 0.27,
     roadStatus: 'open',
+    coverageRadiusM: 4500,
+    hazardAreaSqKm: 63.6,
   },
   {
     id: 'papum-pare-hoj-corridor',
@@ -134,9 +150,13 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.42,
     sar_vh_change: 0.48,
     roadStatus: 'open',
+    coverageRadiusM: 5500,
+    hazardAreaSqKm: 95.0,
   },
 
-  // --- Lower Subansiri District ---
+  // ==================================================
+  // --- Lower Subansiri & Keyi Panyor District Belt ---
+  // ==================================================
   {
     id: 'lower-subansiri-potin-junction',
     sourceZoneId: 'lower_subansiri_arunachal_pradesh',
@@ -152,6 +172,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.48,
     sar_vh_change: 0.54,
     roadStatus: 'open',
+    coverageRadiusM: 6500,
+    hazardAreaSqKm: 132.7,
   },
   {
     id: 'lower-subansiri-yachuli-cut',
@@ -168,6 +190,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.25,
     sar_vh_change: 0.30,
     roadStatus: 'open',
+    coverageRadiusM: 5800,
+    hazardAreaSqKm: 105.7,
   },
   {
     id: 'lower-subansiri-ziro-valley',
@@ -184,6 +208,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.18,
     sar_vh_change: 0.22,
     roadStatus: 'open',
+    coverageRadiusM: 6800,
+    hazardAreaSqKm: 145.3,
   },
   {
     id: 'lower-subansiri-hapoli-slopes',
@@ -200,6 +226,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.26,
     sar_vh_change: 0.31,
     roadStatus: 'open',
+    coverageRadiusM: 4500,
+    hazardAreaSqKm: 63.6,
   },
   {
     id: 'lower-subansiri-pistana-basin',
@@ -216,12 +244,14 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.29,
     sar_vh_change: 0.34,
     roadStatus: 'open',
+    coverageRadiusM: 6200,
+    hazardAreaSqKm: 120.8,
   },
   {
     id: 'lower-subansiri-raga-pass',
     sourceZoneId: 'lower_subansiri_arunachal_pradesh',
-    district: 'Lower Subansiri',
-    name: 'Raga — Border Highway Corridor',
+    district: 'Kamle',
+    name: 'Raga — Kamle Highway Ridge Pass',
     lat: 27.7850,
     lng: 94.0620,
     elevation_m: 1410,
@@ -232,9 +262,13 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.37,
     sar_vh_change: 0.42,
     roadStatus: 'open',
+    coverageRadiusM: 6500,
+    hazardAreaSqKm: 132.7,
   },
 
-  // --- West Siang District ---
+  // ==========================================
+  // --- West Siang & Leparada District Belt ---
+  // ==========================================
   {
     id: 'west-siang-aalo-corridor',
     sourceZoneId: 'west_siang_arunachal_pradesh',
@@ -250,12 +284,14 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.32,
     sar_vh_change: 0.37,
     roadStatus: 'open',
+    coverageRadiusM: 6500,
+    hazardAreaSqKm: 132.7,
   },
   {
     id: 'west-siang-basar-ridge',
     sourceZoneId: 'west_siang_arunachal_pradesh',
-    district: 'West Siang',
-    name: 'Basar — Highway Ridge Sector',
+    district: 'Leparada',
+    name: 'Basar — Trans-Arunachal Highway Ridge',
     lat: 27.9860,
     lng: 94.6640,
     elevation_m: 840,
@@ -266,6 +302,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.25,
     sar_vh_change: 0.30,
     roadStatus: 'open',
+    coverageRadiusM: 5800,
+    hazardAreaSqKm: 105.7,
   },
   {
     id: 'west-siang-kamba-pass',
@@ -282,6 +320,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.30,
     sar_vh_change: 0.35,
     roadStatus: 'open',
+    coverageRadiusM: 6000,
+    hazardAreaSqKm: 113.1,
   },
   {
     id: 'west-siang-liromoba-sector',
@@ -298,6 +338,8 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.35,
     sar_vh_change: 0.40,
     roadStatus: 'open',
+    coverageRadiusM: 6200,
+    hazardAreaSqKm: 120.8,
   },
   {
     id: 'west-siang-darka-hotspot',
@@ -314,6 +356,302 @@ const CURATED_MONITORING_LOCATIONS = [
     sar_vv_change: 0.38,
     sar_vh_change: 0.43,
     roadStatus: 'open',
+    coverageRadiusM: 5200,
+    hazardAreaSqKm: 84.9,
+  },
+
+  // ===============================================
+  // --- Tawang & West Kameng Western Himalayas ---
+  // ===============================================
+  {
+    id: 'tawang-sela-pass-highway',
+    sourceZoneId: 'tawang_arunachal_pradesh',
+    district: 'Tawang',
+    name: 'Sela Pass — NH-13 High Altitude Mountain Corridor',
+    lat: 27.5040,
+    lng: 92.1030,
+    elevation_m: 4170,
+    slope_deg: 39.2,
+    aspect_deg: 215.0,
+    ndvi: 0.32,
+    sar_disturbance: 0.74,
+    sar_vv_change: 0.51,
+    sar_vh_change: 0.58,
+    roadStatus: 'open',
+    coverageRadiusM: 7500,
+    hazardAreaSqKm: 176.7,
+  },
+  {
+    id: 'tawang-monastery-ridge',
+    sourceZoneId: 'tawang_arunachal_pradesh',
+    district: 'Tawang',
+    name: 'Tawang — Main Township & Monastery Ridge',
+    lat: 27.5860,
+    lng: 91.8670,
+    elevation_m: 2660,
+    slope_deg: 32.5,
+    aspect_deg: 190.0,
+    ndvi: 0.52,
+    sar_disturbance: 0.43,
+    sar_vv_change: 0.28,
+    sar_vh_change: 0.33,
+    roadStatus: 'open',
+    coverageRadiusM: 5500,
+    hazardAreaSqKm: 95.0,
+  },
+  {
+    id: 'west-kameng-bomdila-pass',
+    sourceZoneId: 'west_kameng_arunachal_pradesh',
+    district: 'West Kameng',
+    name: 'Bomdila — District HQ & High Ridge Pass',
+    lat: 27.2640,
+    lng: 92.4230,
+    elevation_m: 2210,
+    slope_deg: 34.0,
+    aspect_deg: 200.0,
+    ndvi: 0.58,
+    sar_disturbance: 0.49,
+    sar_vv_change: 0.32,
+    sar_vh_change: 0.37,
+    roadStatus: 'open',
+    coverageRadiusM: 6000,
+    hazardAreaSqKm: 113.1,
+  },
+  {
+    id: 'west-kameng-dirang-valley',
+    sourceZoneId: 'west_kameng_arunachal_pradesh',
+    district: 'West Kameng',
+    name: 'Dirang — Kameng River Basin Corridor',
+    lat: 27.3580,
+    lng: 92.2350,
+    elevation_m: 1600,
+    slope_deg: 31.8,
+    aspect_deg: 180.0,
+    ndvi: 0.62,
+    sar_disturbance: 0.42,
+    sar_vv_change: 0.27,
+    sar_vh_change: 0.31,
+    roadStatus: 'open',
+    coverageRadiusM: 6200,
+    hazardAreaSqKm: 120.8,
+  },
+  {
+    id: 'west-kameng-bhalukpong-foothills',
+    sourceZoneId: 'west_kameng_arunachal_pradesh',
+    district: 'West Kameng',
+    name: 'Bhalukpong — Jia Bhareli River Entry Gorge',
+    lat: 27.0120,
+    lng: 92.6450,
+    elevation_m: 210,
+    slope_deg: 28.6,
+    aspect_deg: 160.0,
+    ndvi: 0.55,
+    sar_disturbance: 0.53,
+    sar_vv_change: 0.36,
+    sar_vh_change: 0.41,
+    roadStatus: 'open',
+    coverageRadiusM: 5200,
+    hazardAreaSqKm: 84.9,
+  },
+
+  // ============================================
+  // --- East Kameng & Pakke Kessang Sector ---
+  // ============================================
+  {
+    id: 'east-kameng-seppa-basin',
+    sourceZoneId: 'east_kameng_arunachal_pradesh',
+    district: 'East Kameng',
+    name: 'Seppa — Kameng River Urban Slopes',
+    lat: 27.3550,
+    lng: 93.0380,
+    elevation_m: 360,
+    slope_deg: 29.5,
+    aspect_deg: 175.0,
+    ndvi: 0.57,
+    sar_disturbance: 0.48,
+    sar_vv_change: 0.31,
+    sar_vh_change: 0.36,
+    roadStatus: 'open',
+    coverageRadiusM: 5600,
+    hazardAreaSqKm: 98.5,
+  },
+  {
+    id: 'pakke-kessang-lemmi-pass',
+    sourceZoneId: 'pakke_kessang_arunachal_pradesh',
+    district: 'Pakke Kessang',
+    name: 'Pakke Kessang — Lemmi High Mountain Pass',
+    lat: 27.1350,
+    lng: 93.2100,
+    elevation_m: 1420,
+    slope_deg: 36.4,
+    aspect_deg: 220.0,
+    ndvi: 0.66,
+    sar_disturbance: 0.52,
+    sar_vv_change: 0.34,
+    sar_vh_change: 0.39,
+    roadStatus: 'open',
+    coverageRadiusM: 6400,
+    hazardAreaSqKm: 128.7,
+  },
+
+  // ============================================
+  // --- Upper Subansiri & Central Highlands ---
+  // ============================================
+  {
+    id: 'upper-subansiri-daporijo-basin',
+    sourceZoneId: 'upper_subansiri_arunachal_pradesh',
+    district: 'Upper Subansiri',
+    name: 'Daporijo — Subansiri River Gorge & Town Slopes',
+    lat: 27.9890,
+    lng: 94.2210,
+    elevation_m: 320,
+    slope_deg: 33.2,
+    aspect_deg: 195.0,
+    ndvi: 0.56,
+    sar_disturbance: 0.54,
+    sar_vv_change: 0.36,
+    sar_vh_change: 0.41,
+    roadStatus: 'open',
+    coverageRadiusM: 6200,
+    hazardAreaSqKm: 120.8,
+  },
+
+  // ============================================
+  // --- Siang & Upper Siang River Corridors ---
+  // ============================================
+  {
+    id: 'siang-pangin-confluence',
+    sourceZoneId: 'siang_arunachal_pradesh',
+    district: 'Siang',
+    name: 'Pangin — Siang & Siyom River Confluence',
+    lat: 28.2120,
+    lng: 94.9920,
+    elevation_m: 290,
+    slope_deg: 35.8,
+    aspect_deg: 205.0,
+    ndvi: 0.61,
+    sar_disturbance: 0.62,
+    sar_vv_change: 0.41,
+    sar_vh_change: 0.47,
+    roadStatus: 'open',
+    coverageRadiusM: 6800,
+    hazardAreaSqKm: 145.3,
+  },
+  {
+    id: 'upper-siang-yingkiong-pass',
+    sourceZoneId: 'upper_siang_arunachal_pradesh',
+    district: 'Upper Siang',
+    name: 'Yingkiong — Upper Siang Gorge Corridor',
+    lat: 28.6180,
+    lng: 94.9750,
+    elevation_m: 510,
+    slope_deg: 37.1,
+    aspect_deg: 210.0,
+    ndvi: 0.63,
+    sar_disturbance: 0.66,
+    sar_vv_change: 0.44,
+    sar_vh_change: 0.50,
+    roadStatus: 'open',
+    coverageRadiusM: 7200,
+    hazardAreaSqKm: 162.9,
+  },
+
+  // ===============================================
+  // --- Shi Yomi & High Border Mountain Valleys ---
+  // ===============================================
+  {
+    id: 'shi-yomi-mechuka-valley',
+    sourceZoneId: 'shi_yomi_arunachal_pradesh',
+    district: 'Shi Yomi',
+    name: 'Mechuka — Yargyap Chu River Basin & Pass',
+    lat: 28.5980,
+    lng: 94.1350,
+    elevation_m: 1890,
+    slope_deg: 34.5,
+    aspect_deg: 215.0,
+    ndvi: 0.59,
+    sar_disturbance: 0.56,
+    sar_vv_change: 0.37,
+    sar_vh_change: 0.42,
+    roadStatus: 'open',
+    coverageRadiusM: 7000,
+    hazardAreaSqKm: 153.9,
+  },
+
+  // ===============================================
+  // --- Eastern Belt: Dibang, Lohit & Anjaw ---
+  // ===============================================
+  {
+    id: 'lower-dibang-roing-mayodia',
+    sourceZoneId: 'lower_dibang_valley_arunachal_pradesh',
+    district: 'Lower Dibang Valley',
+    name: 'Mayodia Pass — Roing-Hunli High Mountain Pass',
+    lat: 28.2320,
+    lng: 95.9120,
+    elevation_m: 2655,
+    slope_deg: 40.2,
+    aspect_deg: 235.0,
+    ndvi: 0.60,
+    sar_disturbance: 0.76,
+    sar_vv_change: 0.52,
+    sar_vh_change: 0.59,
+    roadStatus: 'open',
+    coverageRadiusM: 7400,
+    hazardAreaSqKm: 172.0,
+  },
+  {
+    id: 'lohit-tezu-brahmakund',
+    sourceZoneId: 'lohit_arunachal_pradesh',
+    district: 'Lohit',
+    name: 'Tezu — Brahmakund Parasuram Kund Foothills',
+    lat: 27.9150,
+    lng: 96.1680,
+    elevation_m: 210,
+    slope_deg: 27.4,
+    aspect_deg: 165.0,
+    ndvi: 0.58,
+    sar_disturbance: 0.44,
+    sar_vv_change: 0.28,
+    sar_vh_change: 0.33,
+    roadStatus: 'open',
+    coverageRadiusM: 5800,
+    hazardAreaSqKm: 105.7,
+  },
+  {
+    id: 'anjaw-hayuliang-corridor',
+    sourceZoneId: 'anjaw_arunachal_pradesh',
+    district: 'Anjaw',
+    name: 'Hayuliang — Lohit River Gorge Transit Sector',
+    lat: 28.0820,
+    lng: 96.5450,
+    elevation_m: 750,
+    slope_deg: 38.0,
+    aspect_deg: 220.0,
+    ndvi: 0.62,
+    sar_disturbance: 0.68,
+    sar_vv_change: 0.46,
+    sar_vh_change: 0.52,
+    roadStatus: 'open',
+    coverageRadiusM: 6800,
+    hazardAreaSqKm: 145.3,
+  },
+  {
+    id: 'dibang-valley-anini-gorge',
+    sourceZoneId: 'dibang_valley_arunachal_pradesh',
+    district: 'Dibang Valley',
+    name: 'Anini — Dri River Gorge Mountain Slopes',
+    lat: 28.9860,
+    lng: 95.8920,
+    elevation_m: 1968,
+    slope_deg: 36.8,
+    aspect_deg: 210.0,
+    ndvi: 0.64,
+    sar_disturbance: 0.59,
+    sar_vv_change: 0.39,
+    sar_vh_change: 0.45,
+    roadStatus: 'open',
+    coverageRadiusM: 7000,
+    hazardAreaSqKm: 153.9,
   },
 ]
 

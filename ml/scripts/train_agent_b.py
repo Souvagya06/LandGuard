@@ -16,6 +16,7 @@ Usage:
     python train_agent_b.py
 """
 
+import argparse
 import os
 import pickle
 import numpy as np
@@ -49,8 +50,8 @@ AGENT_B_FEATURES = [
 ]
 
 
-def load_and_prepare_data():
-    """Load feature table and augment with Agent A susceptibility scores."""
+def load_and_prepare_data(start_date="2017-01-01", end_date="2026-12-31"):
+    """Load feature table and augment with Agent A susceptibility scores, filtered to date range."""
     if not os.path.exists(DATA_PATH):
         raise FileNotFoundError(f"Feature table not found at {DATA_PATH}. Run build_feature_table.py first.")
     if not os.path.exists(AGENT_A_PATH):
@@ -58,6 +59,14 @@ def load_and_prepare_data():
 
     df = pd.read_csv(DATA_PATH)
     print(f"Loaded {len(df):,} rows from {os.path.basename(DATA_PATH)}")
+
+    # Filter to specified temporal window
+    df["date"] = pd.to_datetime(df["date"])
+    if start_date:
+        df = df[df["date"] >= pd.Timestamp(start_date)].copy()
+    if end_date:
+        df = df[df["date"] <= pd.Timestamp(end_date)].copy()
+    print(f"Dataset filtered to {start_date} -> {end_date}: {len(df):,} rows retained.")
 
     # Load Agent A artifact
     with open(AGENT_A_PATH, "rb") as f:
@@ -68,9 +77,12 @@ def load_and_prepare_data():
     print("Generating Agent A susceptibility scores across dataset...")
     df["susceptibility_score"] = agent_a_model.predict_proba(df[agent_a_features])[:, 1]
 
-    # Temporal split: Train on 2019-2023, Test out-of-time on 2024-2026
-    df["date"] = pd.to_datetime(df["date"])
-    split_date = pd.Timestamp("2024-01-01")
+    # Temporal split: Use chronological holdout (e.g. 80% train, 20% test on event timeline)
+    pos_dates = df.loc[df["landslide_occurred"] == 1, "date"]
+    if not pos_dates.empty:
+        split_date = pd.Timestamp(pos_dates.quantile(0.80)).normalize()
+    else:
+        split_date = pd.Timestamp(df["date"].quantile(0.80)).normalize()
 
     train_mask = df["date"] < split_date
     test_mask = df["date"] >= split_date
@@ -78,9 +90,15 @@ def load_and_prepare_data():
     train_df = df[train_mask].copy()
     test_df = df[test_mask].copy()
 
-    print(f"Temporal Split -> Train (2019-2023): {len(train_df):,} rows | Test (2024-2026): {len(test_df):,} rows")
+    print(f"Temporal Split (cutoff: {split_date.strftime('%Y-%m-%d')}) -> Train: {len(train_df):,} rows | Test: {len(test_df):,} rows")
     print(f"  Train Positives: {train_df['landslide_occurred'].sum():,} ({train_df['landslide_occurred'].mean()*100:.2f}%)")
     print(f"  Test Positives:  {test_df['landslide_occurred'].sum():,} ({test_df['landslide_occurred'].mean()*100:.2f}%)")
+
+    if train_df["landslide_occurred"].nunique() < 2 or test_df["landslide_occurred"].nunique() < 2:
+        raise ValueError(
+            "Agent B requires both classes in the temporal train and test splits. "
+            f"The dataset between {start_date} and {end_date} does not contain enough events in both splits."
+        )
 
     X_train = train_df[AGENT_B_FEATURES]
     y_train = train_df["landslide_occurred"]
@@ -91,12 +109,12 @@ def load_and_prepare_data():
     return X_train, y_train, X_test, y_test, df
 
 
-def train_agent_b():
+def train_agent_b(start_date="2017-01-01", end_date="2026-12-31"):
     print("=========================================================")
     print("     LandGuard AI: Training Agent B (Dynamic Trigger)    ")
     print("=========================================================")
 
-    X_train, y_train, X_test, y_test, full_df = load_and_prepare_data()
+    X_train, y_train, X_test, y_test, full_df = load_and_prepare_data(start_date, end_date)
 
     # Initialize HistGradientBoosting with class balancing and regularization
     model = HistGradientBoostingClassifier(
@@ -112,8 +130,8 @@ def train_agent_b():
     print("\nFitting Agent B on training set...")
     model.fit(X_train, y_train)
 
-    # Out-of-time Evaluation on Unseen 2024-2026 data
-    print("\n--- Out-of-Time Test Set Evaluation (2024–2026) ---")
+    # Out-of-time Evaluation on Holdout test set
+    print("\n--- Out-of-Time Test Set Evaluation ---")
     y_prob_test = model.predict_proba(X_test)[:, 1]
     y_pred_test = (y_prob_test >= 0.5).astype(int)
 
@@ -142,19 +160,18 @@ def train_agent_b():
         imp = perm_imp.importances_mean[idx]
         print(f"  {feat:<22}: {imp:.4f}")
 
-    # Retrain on full dataset for maximum deployment accuracy
-    print("\nFitting final production Agent B model across full dataset...")
-    X_full = full_df[AGENT_B_FEATURES]
-    y_full = full_df["landslide_occurred"]
-    model.fit(X_full, y_full)
-
-    # Save artifact
+    # Save the model that produced the reported out-of-time metrics. Do not
+    # overwrite it with a full-dataset refit after evaluation.
     os.makedirs(MODEL_DIR, exist_ok=True)
     artifact = {
         "model": model,
         "features": AGENT_B_FEATURES,
-        "version": "1.0.0",
-        "description": "Agent B: Dynamic Landslide Hazard Trigger Classifier",
+        "version": "1.2.0-2017-2026",
+        "description": "Agent B: Dynamic Landslide Hazard Trigger Classifier trained on 2017-2026 data",
+        "date_range": {
+            "start_date": start_date,
+            "end_date": end_date,
+        },
         "metrics": {
             "test_roc_auc": float(auc_roc),
             "test_pr_auc": float(auc_pr),
@@ -170,4 +187,9 @@ def train_agent_b():
 
 
 if __name__ == "__main__":
-    train_agent_b()
+    parser = argparse.ArgumentParser(description="Train LandGuard Agent B Dynamic Trigger model.")
+    parser.add_argument("--start-date", default="2017-01-01", help="Start date for training data (default: 2017-01-01)")
+    parser.add_argument("--end-date", default="2026-12-31", help="End date for training data (default: 2026-12-31)")
+    args = parser.parse_args()
+    train_agent_b(start_date=args.start_date, end_date=args.end_date)
+

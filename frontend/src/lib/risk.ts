@@ -15,7 +15,11 @@ export function levelFromScore(score: number): RiskLevel {
 }
 
 export function isLandslideProne(score: number): boolean {
-  return score >= 50
+  return score >= 75
+}
+
+export function isCriticalZone(score: number): boolean {
+  return score >= 75
 }
 
 export function mapColor(level: RiskLevel): string {
