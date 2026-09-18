@@ -1,0 +1,46 @@
+# Production stack for landguard.online / api.landguard.online.
+#   cp deploy/.env.production.example deploy/.env.production   (fill in the values)
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d --build
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      LANDGUARD_DATA_DIR: /data
+      SERVE_FRONTEND: "false"
+      TRUST_PROXY: "1"
+    volumes:
+      - landguard-data:/data
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+      args:
+        VITE_API_URL: https://${LANDGUARD_API_DOMAIN:-api.landguard.online}
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL for Let's Encrypt}
+      LANDGUARD_WEB_DOMAIN: ${LANDGUARD_WEB_DOMAIN:-landguard.online}
+      LANDGUARD_API_DOMAIN: ${LANDGUARD_API_DOMAIN:-api.landguard.online}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  landguard-data:
+  caddy-data:
+  caddy-config:

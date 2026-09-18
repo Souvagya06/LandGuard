@@ -8,10 +8,11 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: { port: 5173, strictPort: true },
   build: {
     rollupOptions: {
       input: {
-        landing: resolve(__dirname, 'index.html'),
+        app: resolve(__dirname, 'index.html'),
         dashboard: resolve(__dirname, 'dashboard.html'),
         alerts: resolve(__dirname, 'alerts.html'),
         sendAlert: resolve(__dirname, 'send-alert.html'),

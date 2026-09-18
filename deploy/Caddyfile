@@ -1,0 +1,37 @@
+{
+	# Used for Let's Encrypt registration and expiry notices.
+	email {$ACME_EMAIL}
+}
+
+# Authority Control Center — https://landguard.online
+{$LANDGUARD_WEB_DOMAIN:landguard.online}, www.{$LANDGUARD_WEB_DOMAIN:landguard.online} {
+	@www host www.{$LANDGUARD_WEB_DOMAIN:landguard.online}
+	redir @www https://{$LANDGUARD_WEB_DOMAIN:landguard.online}{uri} permanent
+
+	root * /srv/web
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "geolocation=(self), camera=(self), microphone=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://{$LANDGUARD_API_DOMAIN:api.landguard.online} wss://{$LANDGUARD_API_DOMAIN:api.landguard.online}; frame-ancestors 'none'"
+		-Server
+	}
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	# Client-side routes (/alerts, /send-alert, …) fall back to the app shell.
+	try_files {path} {path}.html /index.html
+	file_server
+}
+
+# Production API + realtime WebSocket — https://api.landguard.online
+{$LANDGUARD_API_DOMAIN:api.landguard.online} {
+	encode gzip
+	header -Server
+	# Caddy proxies WebSocket upgrades transparently.
+	reverse_proxy api:8000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

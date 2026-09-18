@@ -2,7 +2,9 @@
 
 LandGuard AI is an AI-assisted landslide early-warning and risk-monitoring platform for North East India. It combines terrain, satellite, rainfall, and historical landslide information to help authorities and field teams identify vulnerable slopes, understand risk drivers, and coordinate early action.
 
-The project includes a live web dashboard, a Node.js risk API, a dual-agent risk engine, and an offline machine-learning pipeline for preparing data and training models.
+The project includes the LandGuard Authority Control Center (web), a Node.js API that is the single source of truth for the web and the LandGuard Android app, a regional monitoring engine, a dual-agent risk model, and an offline machine-learning pipeline.
+
+**Production:** https://landguard.online (control center) · https://api.landguard.online (API). See [docs/production.md](docs/production.md) for the architecture, the shared alert contract and deployment.
 
 ## Features
 
@@ -13,7 +15,7 @@ The project includes a live web dashboard, a Node.js risk API, a dual-agent risk
 - Location-level rainfall, terrain, ground-disturbance, road-status, and factor-breakdown views.
 - Operational advisory explaining the main risk drivers.
 - Dashboard alerts and field-report submission.
-- Resilient fallback rainfall profile when live weather data is unavailable.
+- Missing data is shown as unavailable — readings are never simulated or substituted.
 
 ## System architecture
 

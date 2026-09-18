@@ -1,507 +1,244 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { fetchZones, triggerAlert } from '../lib/api'
-import type { AlertItem, Zone } from '../types'
+import { useMemo, useState, type FormEvent } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, Bell, Radio, Search, Send, ShieldCheck } from 'lucide-react'
+import { approveAlert, createAlert, fetchSession } from '../lib/api'
+import { useAuthorityAlerts, useMonitoringZones, useSystemStatus } from '../lib/queries'
+import { RISK_LEVELS, riskMeta } from '../lib/risk'
+import { roleLabel } from '../lib/format'
+import type { MonitoringZone, RiskLevel } from '../types'
+import { AlertStatusPill, Button, PageHeader, SectionLabel, SeverityPill } from '../components/ui'
+import DeliveryPanel from '../components/DeliveryPanel'
 
-type WarningType = 'critical' | 'moderate' | 'casual'
-type DeliveryMethod = 'popup' | 'app' | 'sms-app'
-
-interface WarningOption {
-  value: WarningType
-  label: string
-  badge: string
-  description: string
-  activeBorder: string
-  activeBg: string
-  badgeColor: string
-  iconColor: string
-}
-
-const warningOptions: WarningOption[] = [
-  {
-    value: 'critical',
-    label: 'Critical & Urgent',
-    badge: 'Immediate Danger',
-    description: 'Imminent landslide danger. Direct all residents and field personnel to evacuate immediately.',
-    activeBorder: 'border-[#d9663f]',
-    activeBg: 'bg-[#d9663f]/15 shadow-[0_0_20px_rgba(217,102,63,0.15)]',
-    badgeColor: 'bg-[#d9663f]/20 text-[#ff8f6b] border-[#d9663f]/40',
-    iconColor: 'text-[#d9663f]',
-  },
-  {
-    value: 'moderate',
-    label: 'Moderate',
-    badge: 'Elevated Risk',
-    description: 'Heightened soil moisture or slope movement. Advise extra caution, monitoring, and travel limits.',
-    activeBorder: 'border-[#e0a339]',
-    activeBg: 'bg-[#e0a339]/15 shadow-[0_0_20px_rgba(224,163,57,0.15)]',
-    badgeColor: 'bg-[#e0a339]/20 text-[#f5c36a] border-[#e0a339]/40',
-    iconColor: 'text-[#e0a339]',
-  },
-  {
-    value: 'casual',
-    label: 'Casual Warning',
-    badge: 'Advisory / Routine',
-    description: 'Routine advisory, weather bulletin, or general awareness update for community vigilance.',
-    activeBorder: 'border-[#57b79e]',
-    activeBg: 'bg-[#57b79e]/15 shadow-[0_0_20px_rgba(87,183,158,0.15)]',
-    badgeColor: 'bg-[#57b79e]/20 text-[#82e1c9] border-[#57b79e]/40',
-    iconColor: 'text-[#57b79e]',
-  },
+const EXPIRY_OPTIONS = [
+  { minutes: 60, label: '1 hour' },
+  { minutes: 180, label: '3 hours' },
+  { minutes: 360, label: '6 hours' },
+  { minutes: 720, label: '12 hours' },
+  { minutes: 1440, label: '24 hours' },
+  { minutes: 2880, label: '48 hours' },
+  { minutes: 4320, label: '72 hours' },
 ]
 
-interface DeliveryOption {
-  value: DeliveryMethod
-  label: string
-  badge: string
-  description: string
-  details: string
+const LEVEL_COPY: Record<RiskLevel, { title: string; description: string; action: string }> = {
+  critical: { title: 'Critical', description: 'Imminent danger. Evacuation or immediate protective action.', action: 'Move away from steep slopes, road cuts and drainage lines now and follow evacuation instructions from local authorities.' },
+  high: { title: 'High', description: 'Landslides likely. Restrict movement and prepare to act.', action: 'Avoid travel near slopes and road cuts, keep emergency kits ready and follow instructions from local authorities.' },
+  moderate: { title: 'Moderate', description: 'Elevated risk. Caution and heightened watch.', action: 'Stay alert for cracks, tilting trees or muddy water, and avoid unnecessary travel on hill roads.' },
+  low: { title: 'Low', description: 'Advisory or all-clear information.', action: 'No immediate action required. Report unusual ground movement to local authorities.' },
 }
 
-const deliveryOptions: DeliveryOption[] = [
-  {
-    value: 'popup',
-    label: 'Popup',
-    badge: 'Instant Visual',
-    description: 'Display an immediate high-priority emergency banner popup on the authority dashboard.',
-    details: 'Real-time alert banner for active operators',
-  },
-  {
-    value: 'app',
-    label: 'Via App',
-    badge: 'Push Notification',
-    description: 'Send native push notification and in-app warning card to all LandGuard mobile & web app users.',
-    details: 'Direct device notification with geo-fence matching',
-  },
-  {
-    value: 'sms-app',
-    label: 'SMS + App (Both)',
-    badge: 'Dual Broadcast',
-    description: 'Broadcast high-priority SMS messages via telecom gateway AND trigger LandGuard app push alerts.',
-    details: 'Maximum reach — covers users with low internet connectivity',
-  },
-]
-
-const defaultMessage = (zone: Zone, warningType: WarningType) => {
-  const label =
-    warningType === 'critical'
-      ? '🚨 CRITICAL & URGENT LANDSLIDE ALERT'
-      : warningType === 'moderate'
-      ? '⚠️ MODERATE LANDSLIDE WARNING'
-      : 'ℹ️ LANDSLIDE ADVISORY & AWARENESS'
-
-  const action =
-    warningType === 'critical'
-      ? 'Immediate evacuation advisory is active. Move to safe designated shelters and follow local disaster authority instructions.'
-      : warningType === 'moderate'
-      ? 'Elevated ground movement & rainfall detected. Avoid steep slopes, unstable roads, and stay tuned for updates.'
-      : 'Routine advisory. Maintain vigilance near slope regions and report any unusual ground movement.'
-
-  return `${label}: High-risk alert for ${zone.name} (${zone.district} District). ${action}`
-}
-
-// Match the Analysis panel's “Live Landslide Probability Rate”. `landslideRate`
-// is the dynamic rate calculated from precipitation, antecedent moisture and
-// InSAR deformation; `riskScore` is only a composite operational score.
-const landslideRiskPercent = (zone: Zone) => {
-  const probability = zone.landslideRate ?? zone.landslideProbability ?? zone.riskScore
-  return probability <= 1 ? Math.round(probability * 100) : Math.round(probability)
-}
+const template = (zone: MonitoringZone, level: RiskLevel) =>
+  `${riskMeta[level].label.toUpperCase()} LANDSLIDE ALERT: ${zone.name} (${zone.state}). ${LEVEL_COPY[level].action}`
 
 export default function SendAlert() {
-  const [searchParams] = useSearchParams()
-  const initialZoneFromUrl = searchParams.get('zone') ?? ''
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const zonesQuery = useMonitoringZones()
+  const system = useSystemStatus()
+  const alerts = useAuthorityAlerts()
+  const session = useQuery({ queryKey: ['session'], queryFn: fetchSession, staleTime: 5 * 60_000 })
 
-  const { data: zones = [], isLoading, isError } = useQuery({
-    queryKey: ['zones'],
-    queryFn: fetchZones,
+  const zones = useMemo(() => [...(zonesQuery.data?.zones ?? [])].sort((a, b) => b.risk.score - a.risk.score), [zonesQuery.data])
+  const [zoneId, setZoneId] = useState(params.get('zone') ?? '')
+  const [search, setSearch] = useState('')
+  const [level, setLevel] = useState<RiskLevel>('critical')
+  const [expiry, setExpiry] = useState(1440)
+  const [customMessage, setCustomMessage] = useState<string | null>(null)
+  const [sentId, setSentId] = useState<string | null>(null)
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+
+  const zone = zones.find((z) => z.id === zoneId) ?? (zoneId ? undefined : zones[0])
+  const message = customMessage ?? (zone ? template(zone, level) : '')
+  const role = session.data?.user.role
+  const canApprove = role === 'incident_commander' || role === 'admin'
+  const needsApproval = (level === 'high' || level === 'critical') && !canApprove
+  const push = system.data?.push
+  const devices = system.data?.devices.registered ?? 0
+  const sent = alerts.data?.find((a) => a.alertId === sentId)
+
+  const q = search.trim().toLowerCase()
+  const matches = q ? zones.filter((z) => z.name.toLowerCase().includes(q) || z.state.toLowerCase().includes(q) || z.id.includes(q)) : zones
+
+  const send = useMutation({
+    mutationFn: () => createAlert({ zoneId: zone!.id, level, message: message.trim(), expiresInMinutes: expiry, clientRequestId: requestId }),
+    onSuccess: (alert) => {
+      setSentId(alert.alertId)
+      queryClient.setQueryData(['alerts', 'authority'], (old: typeof alerts.data) => [alert, ...(old ?? []).filter((a) => a.alertId !== alert.alertId)])
+      queryClient.invalidateQueries({ queryKey: ['system'] })
+    },
+  })
+  const approve = useMutation({
+    mutationFn: (id: string) => approveAlert(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
 
-  const [zoneId, setZoneId] = useState(initialZoneFromUrl)
-  const [warningType, setWarningType] = useState<WarningType>('critical')
-  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('sms-app')
-  const [customMessage, setCustomMessage] = useState<string | null>(null)
-  const [isSending, setIsSending] = useState(false)
-  const [sendError, setSendError] = useState<string | null>(null)
-  const [sentAlertInfo, setSentAlertInfo] = useState<{
-    zoneName: string
-    district: string
-    warningType: WarningType
-    deliveryMethod: DeliveryMethod
-    timestamp: string
-    delivery: AlertItem['delivery']
-  } | null>(null)
-
-  const activeZoneId = zoneId || initialZoneFromUrl || zones[0]?.id || ''
-  const selectedZone = zones.find((zone) => zone.id === activeZoneId) ?? zones[0]
-  const message = customMessage !== null ? customMessage : (selectedZone ? defaultMessage(selectedZone, warningType) : '')
-
-  function handleZoneChange(nextZoneId: string) {
-    setZoneId(nextZoneId)
-    setCustomMessage(null)
-    setSentAlertInfo(null)
-  }
-
-  function handleWarningTypeChange(nextWarningType: WarningType) {
-    setWarningType(nextWarningType)
-    setCustomMessage(null)
-    setSentAlertInfo(null)
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent) {
     event.preventDefault()
-    if (!selectedZone || !message.trim()) return
-
-    setIsSending(true)
-    setSendError(null)
-    try {
-      const alert = await triggerAlert({
-        zoneId: selectedZone.id,
-        level: warningType,
-        message,
-        channel: deliveryMethod,
-      })
-      setIsSending(false)
-      setSentAlertInfo({
-        zoneName: selectedZone.name,
-        district: selectedZone.district,
-        warningType,
-        deliveryMethod,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        delivery: alert.delivery,
-      })
-    } catch (error) {
-      setIsSending(false)
-      setSendError(error instanceof Error ? error.message : 'Unable to dispatch alert.')
-    }
+    if (!zone || !message.trim()) return
+    send.mutate()
   }
 
-  const selectedWarningOption = warningOptions.find((opt) => opt.value === warningType)
-  const selectedDeliveryOption = deliveryOptions.find((opt) => opt.value === deliveryMethod)
-  const selectedRiskPercent = selectedZone ? landslideRiskPercent(selectedZone) : 0
+  function reset() {
+    setSentId(null)
+    setCustomMessage(null)
+    setRequestId(crypto.randomUUID())
+    send.reset()
+  }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 dashboard-page pb-12">
-      {/* Intro Header */}
-      <div className="dashboard-intro">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="mb-1 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-[#e0913f]">
-              Authority Broadcast Console
-            </p>
-            <h1 className="text-3xl font-semibold text-[#eef2ef]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-              Send Landslide Alert
-            </h1>
-            <p className="mt-1 text-sm text-[#93a19a]">
-              Select from all active monitored dashboard zones, configure parameters, and broadcast multichannel alerts.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 rounded-md border border-[#26302d] bg-[#121716] px-3 py-1.5 font-mono text-xs text-[#57b79e]">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#57b79e] opacity-75"></span>
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#57b79e]"></span>
-            </span>
-            {zones.length} Dashboard Zones Monitored
-          </div>
+    <div className="page-enter space-y-5">
+      <PageHeader
+        title="Send alert"
+        subtitle="Alerts go from this console to the LandGuard backend, then by Firebase Cloud Messaging to every registered device, then over the offline mesh between nearby phones."
+      />
+
+      {push && !push.configured && (
+        <div className="flex items-start gap-3 rounded-[20px] border border-critical/30 bg-critical-bg p-4 text-critical">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <p className="text-[13px] font-medium">Push delivery is not configured on the server. Alerts will be stored and shown to devices when they sync, but no push notification will be sent until Firebase Admin credentials are configured.</p>
         </div>
-      </div>
+      )}
 
-      {/* Main Alert Box (Enlarged and Streamlined) */}
-      <div className="rounded-xl border border-[#26302d] bg-[#121716]/95 p-6 shadow-2xl sm:p-8 lg:p-10">
-        <form onSubmit={handleSubmit} className="space-y-8">
-          
-          {/* Section 1: Monitored Zone */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label htmlFor="alert-zone" className="block text-xs font-semibold uppercase tracking-wider text-[#93a19a]">
-                1. Select Monitored Zone ({zones.length} Locations)
-              </label>
-              {selectedZone && (
-                <span className="font-mono text-xs text-[#57b79e]">
-                  Landslide risk rate: <strong className="uppercase">{selectedZone.riskLevel}</strong> ({selectedRiskPercent}%)
-                </span>
-              )}
-            </div>
-
-            <div className="relative">
-              <select
-                id="alert-zone"
-                required
-                value={selectedZone?.id ?? ''}
-                onChange={(event) => handleZoneChange(event.target.value)}
-                disabled={isLoading || zones.length === 0}
-                className="w-full appearance-none rounded-lg border border-[#3a453f] bg-[#0b0f0e] px-4 py-3.5 text-base font-medium text-[#eef2ef] outline-none transition-colors focus:border-[#e0913f] focus:ring-1 focus:ring-[#e0913f]"
-              >
-                {zones.map((zone) => {
-                  const score = landslideRiskPercent(zone)
-                  return (
-                    <option key={zone.id} value={zone.id}>
-                      {zone.name} — {zone.district} District ({score}% Landslide Risk Rate · {zone.riskLevel.toUpperCase()})
-                    </option>
-                  )
-                })}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-[#93a19a]">
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </div>
-
-            {selectedZone && (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 pt-1">
-                <div className="rounded-md border border-[#26302d] bg-[#0b0f0e]/80 p-2.5">
-                  <span className="block text-[10px] uppercase tracking-wider text-[#93a19a]">District</span>
-                  <span className="font-medium text-xs text-[#eef2ef]">{selectedZone.district}</span>
-                </div>
-                <div className="rounded-md border border-[#26302d] bg-[#0b0f0e]/80 p-2.5">
-                  <span className="block text-[10px] uppercase tracking-wider text-[#93a19a]">Coordinates</span>
-                  <span className="font-mono text-xs text-[#eef2ef]">{selectedZone.lat.toFixed(3)}°N, {selectedZone.lng.toFixed(3)}°E</span>
-                </div>
-                <div className="rounded-md border border-[#26302d] bg-[#0b0f0e]/80 p-2.5">
-                  <span className="block text-[10px] uppercase tracking-wider text-[#93a19a]">24h Rain / 7d Rain</span>
-                  <span className="font-mono text-xs text-[#57b79e]">{selectedZone.rainfall24h}mm / {selectedZone.rainfall7d}mm</span>
-                </div>
-                <div className="rounded-md border border-[#26302d] bg-[#0b0f0e]/80 p-2.5">
-                  <span className="block text-[10px] uppercase tracking-wider text-[#93a19a]">Road Status</span>
-                  <span className="font-mono text-xs uppercase text-[#e0913f]">{selectedZone.roadStatus}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Section 2: Warning Type */}
-          <fieldset className="space-y-3">
-            <div className="flex items-center justify-between">
-              <legend className="text-xs font-semibold uppercase tracking-wider text-[#93a19a]">
-                2. Warning Type
-              </legend>
-              <span className="font-mono text-xs text-[#93a19a]">
-                Selected: <strong className="text-[#eef2ef]">{selectedWarningOption?.label}</strong>
-              </span>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              {warningOptions.map((option) => {
-                const isSelected = warningType === option.value
-                return (
-                  <label
-                    key={option.value}
-                    onClick={() => handleWarningTypeChange(option.value)}
-                    className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-5 transition-all duration-200 ${
-                      isSelected
-                        ? `${option.activeBorder} ${option.activeBg} ring-1 ${option.activeBorder}`
-                        : 'border-[#26302d] bg-[#0b0f0e] hover:border-[#3a453f] hover:bg-[#0e1312]'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="warning-type"
-                      value={option.value}
-                      checked={isSelected}
-                      onChange={() => handleWarningTypeChange(option.value)}
-                      className="sr-only"
-                    />
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-base font-semibold text-[#eef2ef]">{option.label}</span>
-                        <span className={`rounded border px-2 py-0.5 text-[10px] font-mono font-medium ${option.badgeColor}`}>
-                          {option.badge}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs leading-relaxed text-[#93a19a]">{option.description}</p>
-                    </div>
-
-                    <div className="mt-4 flex items-center gap-2 pt-2 border-t border-[#26302d]/60 font-mono text-[11px]">
-                      <div className={`h-2.5 w-2.5 rounded-full ${isSelected ? (option.value === 'critical' ? 'bg-[#d9663f]' : option.value === 'moderate' ? 'bg-[#e0a339]' : 'bg-[#57b79e]') : 'bg-[#3a453f]'}`} />
-                      <span className={isSelected ? 'text-[#eef2ef] font-medium' : 'text-[#5c6a64]'}>
-                        {isSelected ? 'Active Selection' : 'Click to select'}
-                      </span>
-                    </div>
-                  </label>
-                )
-              })}
-            </div>
-          </fieldset>
-
-          {/* Section 3: Notification Delivery Method */}
-          <fieldset className="space-y-3">
-            <div className="flex items-center justify-between">
-              <legend className="text-xs font-semibold uppercase tracking-wider text-[#93a19a]">
-                3. How do you want to send the notification?
-              </legend>
-              <span className="font-mono text-xs text-[#93a19a]">
-                Channel: <strong className="text-[#57b79e]">{selectedDeliveryOption?.label}</strong>
-              </span>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              {deliveryOptions.map((option) => {
-                const isSelected = deliveryMethod === option.value
-                return (
-                  <label
-                    key={option.value}
-                    onClick={() => {
-                      setDeliveryMethod(option.value)
-                      setSentAlertInfo(null)
-                    }}
-                    className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-5 transition-all duration-200 ${
-                      isSelected
-                        ? 'border-[#57b79e] bg-[#57b79e]/15 ring-1 border-[#57b79e] shadow-[0_0_20px_rgba(87,183,158,0.12)]'
-                        : 'border-[#26302d] bg-[#0b0f0e] hover:border-[#3a453f] hover:bg-[#0e1312]'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="delivery-method"
-                      value={option.value}
-                      checked={isSelected}
-                      onChange={() => {
-                        setDeliveryMethod(option.value)
-                        setSentAlertInfo(null)
-                      }}
-                      className="sr-only"
-                    />
-
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-[#57b79e] bg-[#57b79e]/20 text-[#57b79e]' : 'border-[#3a453f] text-[#93a19a]'}`}>
-                            {option.value === 'popup' && (
-                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                              </svg>
-                            )}
-                            {option.value === 'app' && (
-                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                              </svg>
-                            )}
-                            {option.value === 'sms-app' && (
-                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                              </svg>
-                            )}
-                          </span>
-                          <span className="text-base font-semibold text-[#eef2ef]">{option.label}</span>
-                        </div>
-                        <span className="rounded border border-[#57b79e]/30 bg-[#57b79e]/10 px-1.5 py-0.5 font-mono text-[10px] text-[#82e1c9]">
-                          {option.badge}
-                        </span>
-                      </div>
-                      <p className="mt-3 text-xs leading-relaxed text-[#93a19a]">{option.description}</p>
-                    </div>
-
-                    <div className="mt-4 pt-2 border-t border-[#26302d]/60 font-mono text-[10px] text-[#5c6a64]">
-                      {option.details}
-                    </div>
-                  </label>
-                )
-              })}
-            </div>
-          </fieldset>
-
-          {/* Section 4: Warning Message */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label htmlFor="alert-message" className="block text-xs font-semibold uppercase tracking-wider text-[#93a19a]">
-                4. Warning Message Broadcast Content
-              </label>
-              <div className="flex items-center gap-3">
+      <div className="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
+        <form onSubmit={submit} className="card space-y-6 p-5 sm:p-6">
+          {/* 1 · Area */}
+          <section className="space-y-2">
+            <SectionLabel>1 · Monitored area</SectionLabel>
+            <label className="flex items-center gap-2 rounded-[14px] border border-line bg-elevated px-3 py-2.5">
+              <Search className="h-4 w-4 text-ink-3" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${zones.length} monitored areas…`} className="w-full bg-transparent text-[13px] outline-none placeholder:text-ink-3" />
+            </label>
+            <div className="max-h-56 space-y-1 overflow-y-auto rounded-[14px] border border-line p-1" role="listbox" aria-label="Monitored areas">
+              {zonesQuery.isLoading && <p className="p-3 text-[12px] text-ink-3">Loading monitored areas…</p>}
+              {zonesQuery.isError && <p className="p-3 text-[12px] text-critical">Monitored areas are unavailable: {(zonesQuery.error as Error).message}</p>}
+              {matches.map((z) => (
                 <button
                   type="button"
-                  onClick={() => {
-                    setCustomMessage(null)
-                  }}
-                  className="font-mono text-xs text-[#e0913f] hover:underline"
+                  role="option"
+                  aria-selected={z.id === zone?.id}
+                  key={z.id}
+                  onClick={() => { setZoneId(z.id); setCustomMessage(null) }}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${z.id === zone?.id ? 'bg-brand-container ring-1 ring-brand/40' : 'hover:bg-elevated'}`}
                 >
-                  Reset to Template
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-bold text-ink">{z.name}</span>
+                    <span className="block text-[11px] text-ink-3">{z.state} · score {z.risk.score} · {z.rainfall ? `${z.rainfall.past72hMm.toFixed(0)} mm / 72 h` : 'rain unavailable'}</span>
+                  </span>
+                  <SeverityPill level={z.risk.level} />
                 </button>
-                <span className="font-mono text-xs text-[#5c6a64]">
-                  {message.length} / 500 characters
-                </span>
-              </div>
+              ))}
             </div>
+          </section>
 
+          {/* 2 · Level */}
+          <fieldset className="space-y-2">
+            <legend><SectionLabel>2 · Alert level</SectionLabel></legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {RISK_LEVELS.map((l) => {
+                const on = level === l
+                const meta = riskMeta[l]
+                return (
+                  <label key={l} className="cursor-pointer rounded-[14px] border p-3 transition-colors" style={on ? { borderColor: meta.accent, background: meta.container } : { borderColor: '#E1E8E3' }}>
+                    <input type="radio" name="level" value={l} checked={on} onChange={() => { setLevel(l); setCustomMessage(null) }} className="sr-only" />
+                    <div className="flex items-center justify-between"><SeverityPill level={l} />{(l === 'high' || l === 'critical') && <span className="text-[10.5px] font-bold text-ink-3">Two-person rule</span>}</div>
+                    <p className="mt-1.5 text-[12px] text-ink-2">{LEVEL_COPY[l].description}</p>
+                  </label>
+                )
+              })}
+            </div>
+          </fieldset>
+
+          {/* 3 · Message */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <SectionLabel>3 · Message</SectionLabel>
+              <span className="text-[11px] text-ink-3">{message.length} / 500 · <button type="button" className="font-bold text-brand hover:underline" onClick={() => setCustomMessage(null)}>Reset template</button></span>
+            </div>
             <textarea
-              id="alert-message"
-              required
+              value={message}
               maxLength={500}
               rows={4}
-              value={message}
-              onChange={(event) => {
-                setCustomMessage(event.target.value)
-                setSentAlertInfo(null)
-              }}
-              className="w-full resize-y rounded-lg border border-[#3a453f] bg-[#0b0f0e] p-4 text-sm leading-relaxed text-[#eef2ef] outline-none transition-colors focus:border-[#e0913f] focus:ring-1 focus:ring-[#e0913f]"
-              placeholder="Enter comprehensive emergency instructions and zone guidance..."
+              required
+              onChange={(e) => setCustomMessage(e.target.value)}
+              className="w-full resize-y rounded-[14px] border border-line bg-surface p-3 text-[13.5px] leading-relaxed outline-none focus:border-brand"
             />
-          </div>
+          </section>
 
-          {/* Error Message */}
-          {(isError || sendError) && (
-            <div className="flex items-center gap-3 rounded-lg border border-[#d9663f]/40 bg-[#d9663f]/10 p-4 text-sm text-[#e28e6c]">
-              <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>{sendError || 'Unable to connect to live zone telemetry. Please verify connection and retry.'}</span>
+          {/* 4 · Expiry */}
+          <section className="space-y-2">
+            <SectionLabel>4 · Valid for</SectionLabel>
+            <div className="flex flex-wrap gap-1.5">
+              {EXPIRY_OPTIONS.map((o) => (
+                <button type="button" key={o.minutes} onClick={() => setExpiry(o.minutes)} className={`rounded-full border px-3 py-1.5 text-[12px] font-bold ${expiry === o.minutes ? 'border-brand bg-brand text-white' : 'border-line text-ink-2 hover:bg-elevated'}`}>
+                  {o.label}
+                </button>
+              ))}
             </div>
-          )}
+            <p className="text-[11.5px] text-ink-3">Devices stop showing and relaying the alert after it expires, including over the offline mesh.</p>
+          </section>
 
-          {/* Success Banner */}
-          {sentAlertInfo && (
-            <div className="rounded-xl border border-[#57b79e]/40 bg-[#57b79e]/10 p-5 shadow-lg">
-              <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#57b79e]/20 text-[#57b79e]">
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold text-[#eef2ef]">Alert persisted at {sentAlertInfo.timestamp}</h4>
-                  <p className="text-xs text-[#a7e2d0]">
-                    Broadcast sent to <strong className="text-white">{sentAlertInfo.zoneName}</strong> ({sentAlertInfo.district} District) with level <strong className="uppercase text-white">{sentAlertInfo.warningType}</strong> via channel <strong className="text-white">{deliveryOptions.find((o) => o.value === sentAlertInfo.deliveryMethod)?.label}</strong>.
-                  </p>
-                  <p className="text-xs text-[#a7e2d0]">
-                    Push delivery: <strong className="text-white">{sentAlertInfo.delivery?.fcm?.delivered ?? 0}</strong> delivered of <strong className="text-white">{sentAlertInfo.delivery?.fcm?.attempted ?? 0}</strong> registered devices ({sentAlertInfo.delivery?.fcm?.reason?.replaceAll('_', ' ') || sentAlertInfo.delivery?.status || 'pending'}).
-                  </p>
+          {send.isError && <p className="rounded-[14px] bg-critical-bg px-3 py-2 text-[13px] text-critical" role="alert">{(send.error as Error).message}</p>}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider pt-4">
+            <p className="text-[12px] text-ink-2">
+              {needsApproval
+                ? <>As {roleLabel(role ?? 'operator')}, this {level} alert will wait for an incident commander's approval before it is sent.</>
+                : <>Sends to <strong className="text-ink">{devices}</strong> registered device{devices === 1 ? '' : 's'} as {session.data?.development ? 'the development operator' : session.data?.user.name}.</>}
+            </p>
+            {sentId ? (
+              <Button type="button" variant="secondary" onClick={reset}>New alert</Button>
+            ) : (
+              <Button type="submit" variant={level === 'critical' ? 'danger' : 'primary'} disabled={!zone || !message.trim() || send.isPending}>
+                <Send className="h-4 w-4" /> {send.isPending ? 'Sending…' : needsApproval ? 'Submit for approval' : `Send ${riskMeta[level].label.toLowerCase()} alert`}
+              </Button>
+            )}
+          </div>
+        </form>
+
+        <div className="space-y-5">
+          {/* Exactly what devices will show */}
+          <div className="card p-5">
+            <SectionLabel>Preview on Android</SectionLabel>
+            <div className="mt-3 rounded-[22px] bg-gradient-to-b from-[#56705F] to-[#8FA595] p-4">
+              <div className="rounded-[18px] bg-white/95 p-3.5 shadow-lg">
+                <div className="flex items-center gap-2 text-[11px] text-ink-3"><Bell className="h-3.5 w-3.5 text-brand" /> LandGuard · now</div>
+                <div className="mt-1.5 flex gap-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ background: riskMeta[level].accent }}><AlertTriangle className="h-4.5 w-4.5 text-white" /></div>
+                  <div className="min-w-0">
+                    <p className="text-[13.5px] font-extrabold text-ink">{level.toUpperCase()} — {zone?.name ?? 'Select an area'}</p>
+                    <p className="mt-0.5 line-clamp-4 text-[12.5px] text-ink-2">{message || '…'}</p>
+                  </div>
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Final Send Alert Action Button */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pt-4 border-t border-[#26302d]">
-            <div className="text-xs text-[#93a19a]">
-              Authorizing entity: <strong className="text-[#eef2ef]">National Disaster Management Authority (NDMA)</strong>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading || !selectedZone || !message.trim() || isSending}
-              className="inline-flex min-h-12 items-center justify-center gap-3 rounded-lg bg-[#e0913f] px-8 py-3 text-base font-semibold text-[#1a1007] shadow-lg transition-all duration-150 hover:bg-[#f0a75b] hover:shadow-[0_0_24px_rgba(224,145,63,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSending ? (
-                <>
-                  <svg className="h-5 w-5 animate-spin text-[#1a1007]" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <span>Broadcasting Alert...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-                  </svg>
-                  <span>Send Alert</span>
-                </>
-              )}
-            </button>
+            <ul className="mt-3 space-y-1.5 text-[12px] text-ink-2">
+              <li className="flex gap-2"><Bell className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-light" /> Stored in the app's alert history with the same alert ID.</li>
+              <li className="flex gap-2"><Radio className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-light" /> Phones relay it over Nearby Connections to nearby LandGuard users who are offline (up to 6 hops, until expiry).</li>
+              <li className="flex gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-light" /> Devices confirm receipt back here when they are online.</li>
+            </ul>
           </div>
-        </form>
+
+          {sent && (
+            <div className="card space-y-3 p-5" aria-live="polite">
+              <div className="flex flex-wrap items-center gap-2">
+                <SeverityPill level={sent.level} />
+                <AlertStatusPill status={sent.status} />
+                <span className="ml-auto font-mono text-[11px] text-ink-3" title="Identical on the backend, FCM, Android and the mesh">ID {sent.alertId}</span>
+              </div>
+              <p className="text-[13px] font-bold text-ink">{sent.zoneName}</p>
+              {sent.status === 'awaiting_approval' ? (
+                <div className="space-y-2">
+                  <p className="rounded-[14px] bg-sand px-3 py-2 text-[12.5px] text-ochre">Saved on the backend and waiting for an incident commander. It has not been sent to any device.</p>
+                  {canApprove && <Button onClick={() => approve.mutate(sent.alertId)} disabled={approve.isPending}>Approve and send</Button>}
+                </div>
+              ) : (
+                <DeliveryPanel alert={sent} />
+              )}
+              <button className="text-[12px] font-bold text-brand hover:underline" onClick={() => navigate(`/alerts?focus=${sent.alertId}`)}>Open in alert history</button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

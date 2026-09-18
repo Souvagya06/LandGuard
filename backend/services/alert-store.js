@@ -1,11 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { normalizeStoredAlert, DEFAULT_EXPIRY_MINUTES } = require('./alert-contract');
 
 /**
  * Small, durable JSON repository. It deliberately has no dependency on an
- * in-memory process, so alerts and registered FCM tokens survive restarts.
- * The file can later be replaced by a database adapter without changing routes.
+ * in-memory process, so alerts, registered FCM tokens and delivery receipts
+ * survive restarts. The file can later be replaced by a database adapter
+ * without changing routes.
  */
 class AlertStore {
   constructor(filePath = path.join(__dirname, '..', 'data', 'alerts.json')) {
@@ -17,7 +19,7 @@ class AlertStore {
   load() {
     try {
       const parsed = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
-      this.state.alerts = Array.isArray(parsed.alerts) ? parsed.alerts : [];
+      this.state.alerts = Array.isArray(parsed.alerts) ? parsed.alerts.map(normalizeStoredAlert) : [];
       this.state.devices = Array.isArray(parsed.devices) ? parsed.devices : [];
       this.state.reports = Array.isArray(parsed.reports) ? parsed.reports : [];
       this.state.auditEvents = Array.isArray(parsed.auditEvents) ? parsed.auditEvents : [];
@@ -35,6 +37,7 @@ class AlertStore {
   }
 
   listAlerts() { return [...this.state.alerts]; }
+  getAlert(id) { return this.state.alerts.find((alert) => alert.alertId === id) || null; }
   listDevices() { return [...this.state.devices]; }
   listReports() { return [...this.state.reports]; }
   listAuditEvents() { return [...this.state.auditEvents]; }
@@ -47,12 +50,25 @@ class AlertStore {
     return event;
   }
 
-  createAlert(payload) {
+  findRecentByClientRequestId(clientRequestId, withinMs = 10 * 60 * 1000) {
+    if (!clientRequestId) return null;
+    const since = Date.now() - withinMs;
+    return this.state.alerts.find((a) => a.clientRequestId === clientRequestId && Date.parse(a.createdAt) >= since) || null;
+  }
+
+  createAlert({ expiresInMinutes = DEFAULT_EXPIRY_MINUTES, ...payload }) {
+    const now = new Date();
+    const alertId = crypto.randomUUID();
     const alert = {
-      id: crypto.randomUUID(),
+      id: alertId,
+      alertId,
       ...payload,
+      timestamp: now.toISOString(),
+      expiresAt: new Date(now.getTime() + expiresInMinutes * 60_000).toISOString(),
+      receipts: {},
       delivery: { status: 'pending', attemptedAt: null, fcm: null },
-      createdAt: new Date().toISOString(),
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     };
     this.state.alerts.unshift(alert);
     this.persist();
@@ -60,9 +76,25 @@ class AlertStore {
   }
 
   updateAlert(id, patch) {
-    const index = this.state.alerts.findIndex((alert) => alert.id === id);
+    const index = this.state.alerts.findIndex((alert) => alert.alertId === id);
     if (index === -1) return null;
-    this.state.alerts[index] = { ...this.state.alerts[index], ...patch };
+    this.state.alerts[index] = { ...this.state.alerts[index], ...patch, updatedAt: new Date().toISOString() };
+    this.persist();
+    return this.state.alerts[index];
+  }
+
+  /** Device-side delivery confirmation; one record per app installation. */
+  recordReceipt(alertId, { installationId, event, via, hopCount = 0 }) {
+    const index = this.state.alerts.findIndex((alert) => alert.alertId === alertId);
+    if (index === -1) return null;
+    const alert = this.state.alerts[index];
+    const now = new Date().toISOString();
+    const current = alert.receipts?.[installationId] || { receivedAt: null, openedAt: null, acknowledgedAt: null };
+    const next = { ...current, via: current.via || via, hopCount: current.hopCount ?? hopCount, updatedAt: now };
+    if (!next.receivedAt) next.receivedAt = now;
+    if (event === 'opened' && !next.openedAt) next.openedAt = now;
+    if (event === 'acknowledged' && !next.acknowledgedAt) next.acknowledgedAt = now;
+    this.state.alerts[index] = { ...alert, receipts: { ...(alert.receipts || {}), [installationId]: next } };
     this.persist();
     return this.state.alerts[index];
   }
@@ -82,22 +114,46 @@ class AlertStore {
     return this.state.reports[index];
   }
 
-  registerDevice({ token, platform = 'android', zoneIds = [], appVersion }) {
+  deleteReport(id) {
+    const index = this.state.reports.findIndex((report) => report.id === id);
+    if (index === -1) return null;
+    const [removed] = this.state.reports.splice(index, 1);
+    this.persist();
+    return removed;
+  }
+
+  /**
+   * Upsert by installation (so a rotated FCM token replaces the old one), and
+   * fall back to the token itself for clients that do not send an installation id.
+   */
+  registerDevice({ token, platform = 'android', zoneIds = [], appVersion, installationId }) {
     const now = new Date().toISOString();
-    const index = this.state.devices.findIndex((device) => device.token === token);
+    const index = this.state.devices.findIndex((device) => (installationId && device.installationId === installationId) || device.token === token);
+    const previous = index === -1 ? null : this.state.devices[index];
     const device = {
-      id: index === -1 ? crypto.randomUUID() : this.state.devices[index].id,
+      id: previous?.id || crypto.randomUUID(),
       token,
       platform,
+      installationId: installationId || previous?.installationId || null,
       zoneIds: [...new Set(zoneIds)],
-      appVersion: appVersion || null,
+      appVersion: appVersion || previous?.appVersion || null,
+      lastSeenAt: now,
       updatedAt: now,
-      createdAt: index === -1 ? now : this.state.devices[index].createdAt,
+      createdAt: previous?.createdAt || now,
     };
     if (index === -1) this.state.devices.push(device);
     else this.state.devices[index] = device;
+    // A token can only belong to one installation.
+    this.state.devices = this.state.devices.filter((d) => d.id === device.id || d.token !== token);
     this.persist();
     return device;
+  }
+
+  touchDevice(installationId) {
+    const device = this.state.devices.find((d) => d.installationId && d.installationId === installationId);
+    if (!device) return;
+    device.lastSeenAt = new Date().toISOString();
+    this.persist();
   }
 
   removeTokens(tokens) {
@@ -109,7 +165,7 @@ class AlertStore {
   }
 
   matchingDevices(zoneId) {
-    return this.state.devices.filter((device) => !device.zoneIds.length || device.zoneIds.includes(zoneId));
+    return this.state.devices.filter((device) => !device.zoneIds?.length || device.zoneIds.includes(zoneId));
   }
 }
 

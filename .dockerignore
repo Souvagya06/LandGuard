@@ -1,0 +1,14 @@
+**/node_modules
+**/.env
+**/.env.*
+!frontend/.env.production
+frontend/dist
+backend/data
+backend/firebase-service-account.json
+backend/google-services.json
+ml/data
+ml/notebooks
+**/__pycache__
+.git
+*.log
+*.md

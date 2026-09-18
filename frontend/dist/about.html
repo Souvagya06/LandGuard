@@ -3,126 +3,108 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#0B1F14" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-<title>About | LandGuard AI</title>
-<meta name="description" content="How LandGuard AI turns satellite, terrain, and rainfall data into landslide risk scores for North East India." />
+<title>About · LandGuard</title>
+<meta name="description" content="How LandGuard turns recorded landslides, rainfall, terrain and satellite observations into one shared risk picture for authorities and residents in Northeast India." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0b0f0e; --bg-panel:#121716; --line:#26302d; --line-soft:#1c2422;
-    --text:#eef2ef; --text-muted:#93a19a; --text-faint:#5c6a64;
-    --amber:#e0913f; --teal:#57b79e; --critical:#d9663f; --moderate:#e0a339;
-    --font-display:'Space Grotesk',sans-serif; --font-body:'IBM Plex Sans',sans-serif; --font-mono:'IBM Plex Mono',monospace;
+    --canvas:#F6F8F7; --surface:#FFFFFF; --elevated:#F2F5F3; --line:#E1E8E3;
+    --brand:#1B5E37; --brand-light:#2E7A4E; --brand-container:#E8F5EE;
+    --ink:#0D1812; --ink-2:#4A6558; --ink-3:#8AA898; --forest-night:#0B1F14; --leaf:#6DBF67; --mist:#F4F6F1; --mist-muted:#B9C7BC;
+    --critical:#DC2626; --high:#EA580C; --moderate:#D97706; --low:#16A34A;
   }
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);line-height:1.65;-webkit-font-smoothing:antialiased;}
+  body{margin:0;background:var(--canvas);color:var(--ink);font-family:Roboto,'Segoe UI',system-ui,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased;}
   a{color:inherit;text-decoration:none;}
-  a:focus-visible{outline:2px solid var(--teal);outline-offset:3px;}
-  .wrap{max-width:920px;margin:0 auto;padding:0 clamp(20px,5vw,56px);}
-
-  .nav{display:flex;align-items:center;justify-content:space-between;padding:22px clamp(20px,5vw,56px);border-bottom:1px solid var(--line);}
-  .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:600;font-size:17px;}
-  .brand-mark{width:30px;height:30px;border:1px solid var(--teal);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;color:var(--teal);}
-  .nav-links{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;}
-  .nav-links a{display:inline-flex;align-items:center;min-height:36px;padding:7px 12px;border:1px solid transparent;border-radius:3px;font-size:14.5px;color:var(--text-muted);white-space:nowrap;}
-  .nav-links a:hover{color:var(--text);}
-  .nav-link-active{border-color:var(--teal)!important;background:var(--teal);color:#08110d!important;}
-  .nav-cta{font-family:var(--font-mono);font-size:13px;font-weight:600;color:#08110d!important;background:var(--amber);padding:9px 16px;border-radius:3px;}
-  .nav-cta:hover{background:#f0a957;color:#08110d!important;}
-  @media (max-width:700px){ .nav-links a:not(.nav-cta){display:none;} }
-
-  main{padding:clamp(56px,8vw,100px) 0 clamp(48px,7vw,80px);}
-  .kicker{font-family:var(--font-mono);font-size:13px;color:var(--amber);margin:0 0 20px;}
-  h1{font-family:var(--font-display);font-weight:600;font-size:clamp(34px,5vw,52px);line-height:1.08;letter-spacing:-.01em;margin:0 0 28px;max-width:16ch;}
-  .intro{font-size:18px;color:var(--text-muted);max-width:58ch;margin:0;}
-
-  section.block{padding:44px 0;border-top:1px solid var(--line);}
-  section.block h2{font-family:var(--font-display);font-size:22px;font-weight:600;margin:0 0 16px;}
-  section.block p{color:var(--text-muted);font-size:15.5px;max-width:62ch;margin:0 0 14px;}
-
-  .source-list{list-style:none;margin:20px 0 0;padding:0;border:1px solid var(--line);}
-  .source-list li{display:flex;justify-content:space-between;gap:20px;padding:14px 18px;border-bottom:1px solid var(--line);font-size:14.5px;}
-  .source-list li:last-child{border-bottom:none;}
-  .source-list b{font-family:var(--font-mono);font-weight:500;color:var(--text);}
-  .source-list span{color:var(--text-faint);font-family:var(--font-mono);font-size:13px;text-align:right;}
-
-  .legend{display:flex;gap:28px;flex-wrap:wrap;margin-top:22px;}
-  .legend-item{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--text-muted);}
-  .legend-dot{width:9px;height:9px;border-radius:50%;}
-  .legend-dot.critical{background:var(--critical);}
-  .legend-dot.moderate{background:var(--moderate);}
-  .legend-dot.stable{background:#4fae86;}
-
-  .closing{padding-top:44px;border-top:1px solid var(--line);}
-  .closing p{font-size:16px;color:var(--text-muted);max-width:56ch;margin:0 0 24px;}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:3px;font-size:14.5px;font-weight:500;background:var(--teal);color:#08110d;}
-  .btn:hover{background:#68c7ac;}
-
-  footer{border-top:1px solid var(--line);padding:28px clamp(20px,5vw,56px);}
-  .footer-row{max-width:920px;margin:0 auto;display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;}
-  .footer-row p{margin:0;font-size:13px;color:var(--text-faint);}
-  .footer-row a{font-size:13px;color:var(--text-muted);}
-  .footer-row a:hover{color:var(--text);}
+  a:focus-visible{outline:2px solid var(--brand-light);outline-offset:3px;}
+  .wrap{max-width:880px;margin:0 auto;padding:0 20px;}
+  header{background:var(--forest-night);color:var(--mist);}
+  .nav{display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:880px;margin:0 auto;padding:18px 20px;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-.02em;}
+  .brand img{width:34px;height:34px;}
+  .brand .g{color:var(--leaf);}
+  .cta{display:inline-flex;align-items:center;min-height:40px;padding:0 16px;border-radius:14px;background:var(--leaf);color:var(--forest-night);font-weight:800;font-size:14px;}
+  .hero{max-width:880px;margin:0 auto;padding:40px 20px 56px;}
+  .kicker{font-size:11px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--mist-muted);margin:0 0 14px;}
+  h1{font-size:clamp(30px,5vw,44px);font-weight:800;line-height:1.1;letter-spacing:-.02em;margin:0 0 18px;max-width:18ch;}
+  .intro{font-size:17px;color:var(--mist-muted);max-width:60ch;margin:0;}
+  main{padding:32px 0 48px;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:24px;margin-bottom:16px;}
+  .card h2{font-size:20px;font-weight:800;letter-spacing:-.01em;margin:0 0 10px;}
+  .card p{color:var(--ink-2);font-size:15px;margin:0 0 10px;max-width:66ch;}
+  .sources{list-style:none;margin:14px 0 0;padding:0;border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+  .sources li{display:flex;justify-content:space-between;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px;}
+  .sources li:last-child{border-bottom:none;}
+  .sources b{font-weight:700;}
+  .sources span{color:var(--ink-3);text-align:right;}
+  .bands{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:14px;}
+  .band{border-radius:14px;padding:10px 12px;font-size:13px;}
+  .band b{display:block;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
+  .flow{display:grid;gap:8px;margin-top:14px;}
+  .flow div{background:var(--elevated);border-radius:14px;padding:10px 14px;font-size:14px;color:var(--ink-2);}
+  .flow b{color:var(--ink);}
+  footer{border-top:1px solid var(--line);padding:22px 20px;text-align:center;color:var(--ink-3);font-size:13px;}
 </style>
 </head>
 <body>
-
-  <nav class="nav">
-    <a class="brand" href="/"><span class="brand-mark">LG</span>LandGuard AI</a>
-    <div class="nav-links">
-      <a class="nav-link" href="/">Home</a>
-      <a class="nav-link nav-link-active" href="/about.html">About</a>
-      <a class="nav-link" href="/alerts.html">Alerts</a>
-      <a class="nav-cta" href="/dashboard.html">Open dashboard</a>
+  <header>
+    <nav class="nav">
+      <a class="brand" href="/"><img src="/favicon.svg" alt="" /><span>Land<span class="g">Guard</span></span></a>
+      <a class="cta" href="/">Open control center</a>
+    </nav>
+    <div class="hero">
+      <p class="kicker">Safer Lands. Stronger Tomorrows.</p>
+      <h1>One risk picture for authorities and residents.</h1>
+      <p class="intro">LandGuard watches the slopes of Northeast India from recorded landslides, live rainfall, terrain and satellite observations. Authorities see it in this control center; residents see the same data and receive the same alerts in the LandGuard Android app.</p>
     </div>
-  </nav>
+  </header>
 
   <main class="wrap">
-    <p class="kicker">About LandGuard</p>
-    <h1>Why we're teaching a model to read mountains.</h1>
-    <p class="intro">Most landslides in North East India happen where no one is watching closely enough, fast enough. LandGuard exists to close that gap between when the ground starts moving and when someone finds out.</p>
-
-    <section class="block">
-      <h2>The problem</h2>
-      <p>Steep terrain, heavy monsoon rainfall, and limited ground sensors make the region especially exposed to landslides — and especially hard to monitor by hand. By the time a slope failure is visible on the road, it's usually too late to warn anyone nearby.</p>
-      <p>Satellites, on the other hand, pass over the same ground every few days regardless of terrain or weather. LandGuard's job is to turn those repeat passes into an early warning, not just an after-the-fact record.</p>
+    <section class="card">
+      <h2>Where we monitor</h2>
+      <p>Monitored areas are not hand-picked. They are clusters of landslides recorded in the NASA Global Landslide Catalog across all eight Northeast states — Arunachal Pradesh, Assam, Manipur, Meghalaya, Mizoram, Nagaland, Sikkim and Tripura. Any other location can be analysed on demand.</p>
     </section>
 
-    <section class="block">
-      <h2>What the model is trained on</h2>
-      <p>We combine optical and radar satellite imagery with elevation, slope, soil, and rainfall data, then train a machine learning model to recognise the conditions that precede a slide — not just the ones that follow one.</p>
-      <ul class="source-list">
-        <li><b>Optical imagery</b><span>vegetation &amp; surface change</span></li>
-        <li><b>SAR imagery</b><span>ground movement, all-weather</span></li>
-        <li><b>Elevation model</b><span>slope angle &amp; aspect</span></li>
-        <li><b>Rainfall data</b><span>gridded, historical &amp; live</span></li>
+    <section class="card">
+      <h2>What the risk index reads</h2>
+      <p>Every input carries its source and the time it was observed. If an input is unavailable it is left out and the page says so — nothing is estimated or simulated in its place.</p>
+      <ul class="sources">
+        <li><b>Landslide record</b><span>NASA Global Landslide Catalog (historical)</span></li>
+        <li><b>Rainfall &amp; soil moisture</b><span>Open-Meteo weather models, hourly</span></li>
+        <li><b>Slope &amp; elevation</b><span>Copernicus GLO-90 DEM</span></li>
+        <li><b>Vegetation change</b><span>ESA Sentinel-2 L2A (NDVI)</span></li>
+        <li><b>Ground surface change</b><span>ESA Sentinel-1 RTC (C-band SAR)</span></li>
+        <li><b>ALOS-4 PALSAR-3</b><span>Not publicly available — shown as unavailable</span></li>
       </ul>
     </section>
 
-    <section class="block">
-      <h2>How risk is scored</h2>
-      <p>Each monitored zone gets a probability of failure, refreshed as new imagery arrives, and grouped into three bands so field teams can triage at a glance.</p>
-      <div class="legend">
-        <div class="legend-item"><span class="legend-dot critical"></span>Critical — act now</div>
-        <div class="legend-item"><span class="legend-dot moderate"></span>Moderate — watch closely</div>
-        <div class="legend-item"><span class="legend-dot stable"></span>Stable — routine monitoring</div>
+    <section class="card">
+      <h2>Risk levels</h2>
+      <p>The same four levels and thresholds are used by the backend, this control center and the Android app.</p>
+      <div class="bands">
+        <div class="band" style="background:#FEF2F2;color:var(--critical)"><b>Critical</b>75–100 · act now</div>
+        <div class="band" style="background:#FFF7ED;color:var(--high)"><b>High</b>50–74 · prepare to act</div>
+        <div class="band" style="background:#FFFBEB;color:var(--moderate)"><b>Moderate</b>25–49 · watch closely</div>
+        <div class="band" style="background:#F0FDF4;color:var(--low)"><b>Low</b>0–24 · routine monitoring</div>
       </div>
     </section>
 
-    <div class="closing">
-      <p>LandGuard is a student-built project, and the model is still learning — every field report that confirms or corrects a prediction makes the next one sharper.</p>
-      <a class="btn" href="/dashboard.html">See the current risk map</a>
-    </div>
+    <section class="card">
+      <h2>How an alert reaches people</h2>
+      <div class="flow">
+        <div><b>1 · Authority</b> issues the alert in the control center (critical and high alerts need an incident commander).</div>
+        <div><b>2 · Backend</b> stores it with one alert ID and an expiry time.</div>
+        <div><b>3 · Firebase Cloud Messaging</b> delivers it to every registered LandGuard phone.</div>
+        <div><b>4 · Nearby Connections</b> lets phones pass it on to nearby LandGuard users who have no internet.</div>
+        <div><b>5 · Phones</b> confirm receipt back to the control center when they are online.</div>
+      </div>
+    </section>
   </main>
 
-  <footer>
-    <div class="footer-row">
-      <p>LandGuard AI — landslide intelligence for North East India.</p>
-      <a href="/">← Back home</a>
-    </div>
-  </footer>
-
+  <footer>LandGuard — landslide intelligence for Northeast India.</footer>
 </body>
 </html>
