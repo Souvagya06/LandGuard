@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Bell, Radio, Search, Send, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Bell, Check, Radio, Search, Send, ShieldCheck, X } from 'lucide-react'
 import { approveAlert, createAlert, fetchSession } from '../lib/api'
 import { useAuthorityAlerts, useMonitoringZones, useSystemStatus } from '../lib/queries'
 import { RISK_LEVELS, riskMeta } from '../lib/risk'
@@ -48,6 +48,8 @@ export default function SendAlert() {
   const [sentId, setSentId] = useState<string | null>(null)
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
 
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+
   const zone = zones.find((z) => z.id === zoneId) ?? (zoneId ? undefined : zones[0])
   const message = customMessage ?? (zone ? template(zone, level) : '')
   const role = session.data?.user.role
@@ -58,7 +60,19 @@ export default function SendAlert() {
   const sent = alerts.data?.find((a) => a.alertId === sentId)
 
   const q = search.trim().toLowerCase()
-  const matches = q ? zones.filter((z) => z.name.toLowerCase().includes(q) || z.state.toLowerCase().includes(q) || z.id.includes(q)) : zones
+  const terms = useMemo(() => q.split(/\s+/).filter(Boolean), [q])
+  const matches = useMemo(() => {
+    if (!terms.length) return zones
+    return zones.filter((z) => {
+      const haystack = `${z.name} ${z.state} ${z.id} ${z.lat.toFixed(2)} ${z.lng.toFixed(2)}`.toLowerCase()
+      return terms.every((t) => haystack.includes(t))
+    })
+  }, [zones, terms])
+
+  const selectZone = (selected: MonitoringZone) => {
+    setZoneId(selected.id)
+    setCustomMessage(null)
+  }
 
   const send = useMutation({
     mutationFn: () => createAlert({ zoneId: zone!.id, level, message: message.trim(), expiresInMinutes: expiry, clientRequestId: requestId }),
@@ -103,31 +117,128 @@ export default function SendAlert() {
       <div className="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
         <form onSubmit={submit} className="card space-y-6 p-5 sm:p-6">
           {/* 1 · Area */}
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionLabel>1 · Monitored area</SectionLabel>
-            <label className="flex items-center gap-2 rounded-[14px] border border-line bg-elevated px-3 py-2.5">
-              <Search className="h-4 w-4 text-ink-3" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${zones.length} monitored areas…`} className="w-full bg-transparent text-[13px] outline-none placeholder:text-ink-3" />
+
+            {/* Currently Selected Area Banner */}
+            {zone ? (
+              <div className="flex items-center justify-between gap-3 rounded-[14px] border border-brand/30 bg-brand-container/50 px-3.5 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-brand-dark">Selected Area</span>
+                    <SeverityPill level={zone.risk.level} />
+                  </div>
+                  <p className="truncate text-[13.5px] font-bold text-ink">
+                    {zone.name} <span className="text-[12px] font-normal text-ink-2">({zone.state})</span>
+                  </p>
+                  <p className="text-[11px] text-ink-3">
+                    Risk score {zone.risk.score} · {zone.rainfall ? `${zone.rainfall.past72hMm.toFixed(0)} mm rain / 72 h` : 'Rain unavailable'} · {zone.lat.toFixed(2)}°N, {zone.lng.toFixed(2)}°E
+                  </p>
+                </div>
+                <span className="flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-bold text-brand shadow-xs shrink-0">
+                  <Check className="h-3 w-3" /> Selected
+                </span>
+              </div>
+            ) : (
+              <div className="rounded-[14px] border border-amber-500/30 bg-amber-500/10 p-3 text-[12px] text-amber-900">
+                Please select a monitored area from the list below.
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 rounded-[14px] border border-line bg-elevated px-3 py-2.5 focus-within:border-brand">
+              <Search className="h-4 w-4 text-ink-3 shrink-0" />
+              <input
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setHighlightedIndex(0)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const target = matches[highlightedIndex] ?? matches[0]
+                    if (target) {
+                      selectZone(target)
+                    }
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    if (matches.length > 0) {
+                      setHighlightedIndex((prev) => (prev + 1) % matches.length)
+                    }
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    if (matches.length > 0) {
+                      setHighlightedIndex((prev) => (prev - 1 + matches.length) % matches.length)
+                    }
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setSearch('')
+                    setHighlightedIndex(0)
+                  }
+                }}
+                placeholder={`Search ${zones.length} monitored areas… (press Enter to select)`}
+                className="w-full bg-transparent text-[13px] outline-none placeholder:text-ink-3"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('')
+                    setHighlightedIndex(0)
+                  }}
+                  className="rounded-full p-1 text-ink-3 hover:bg-surface hover:text-ink transition-colors"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </label>
+
             <div className="max-h-56 space-y-1 overflow-y-auto rounded-[14px] border border-line p-1" role="listbox" aria-label="Monitored areas">
               {zonesQuery.isLoading && <p className="p-3 text-[12px] text-ink-3">Loading monitored areas…</p>}
               {zonesQuery.isError && <p className="p-3 text-[12px] text-critical">Monitored areas are unavailable: {(zonesQuery.error as Error).message}</p>}
-              {matches.map((z) => (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={z.id === zone?.id}
-                  key={z.id}
-                  onClick={() => { setZoneId(z.id); setCustomMessage(null) }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${z.id === zone?.id ? 'bg-brand-container ring-1 ring-brand/40' : 'hover:bg-elevated'}`}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-bold text-ink">{z.name}</span>
-                    <span className="block text-[11px] text-ink-3">{z.state} · score {z.risk.score} · {z.rainfall ? `${z.rainfall.past72hMm.toFixed(0)} mm / 72 h` : 'rain unavailable'}</span>
-                  </span>
-                  <SeverityPill level={z.risk.level} />
-                </button>
-              ))}
+              {matches.length === 0 && !zonesQuery.isLoading && (
+                <div className="p-4 text-center">
+                  <p className="text-[12.5px] font-medium text-ink-2">No monitored areas match &ldquo;{search}&rdquo;</p>
+                  <p className="mt-0.5 text-[11px] text-ink-3">Try searching by place name, state, or coordinates.</p>
+                  <button
+                    type="button"
+                    onClick={() => { setSearch(''); setHighlightedIndex(0) }}
+                    className="mt-2 text-[12px] font-bold text-brand hover:underline"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              )}
+              {matches.map((z, idx) => {
+                const isSelected = z.id === zone?.id
+                const isHighlighted = idx === highlightedIndex && search.trim().length > 0
+                return (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    key={z.id}
+                    onClick={() => selectZone(z)}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${
+                      isSelected
+                        ? 'bg-brand-container ring-1 ring-brand/60 font-semibold'
+                        : isHighlighted
+                        ? 'bg-elevated ring-1 ring-brand/30'
+                        : 'hover:bg-elevated'
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="block truncate text-[13px] font-bold text-ink">{z.name}</span>
+                        {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-brand font-bold" />}
+                      </span>
+                      <span className="block text-[11px] text-ink-3">{z.state} · score {z.risk.score} · {z.rainfall ? `${z.rainfall.past72hMm.toFixed(0)} mm / 72 h` : 'rain unavailable'}</span>
+                    </span>
+                    <SeverityPill level={z.risk.level} />
+                  </button>
+                )
+              })}
             </div>
           </section>
 
