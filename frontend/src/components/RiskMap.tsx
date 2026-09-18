@@ -1,392 +1,519 @@
-import { Fragment, useState, useEffect } from 'react'
-import { MapContainer, TileLayer, Circle, CircleMarker, Tooltip, Popup, useMap, useMapEvents } from 'react-leaflet'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { MapContainer, TileLayer, Circle, CircleMarker, Rectangle, Tooltip, Popup, ZoomControl, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import L from 'leaflet'
-import type { Zone, FieldReport } from '../types'
-import { isLandslideProne, levelFromScore, mapColor } from '../lib/risk'
-import { Layers, Search, MapPin, Compass, Radio } from 'lucide-react'
-
-// Fix default leaflet icons
-delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-})
+import type { CircleMarker as LeafletCircleMarker, LatLngBoundsExpression } from 'leaflet'
+import { Crosshair, Layers, MapPin, Radio, Search, Trash2, X } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { deleteReport } from '../lib/api'
+import type { FieldReport, MonitoringZone, PublicAlert, RiskLevel } from '../types'
+import { RISK_LEVELS, riskMeta } from '../lib/risk'
 
 interface Props {
-  zones: Zone[]
+  zones: MonitoringZone[]
   selectedId?: string
-  onSelect: (zone: Zone) => void
+  onSelect: (zone: MonitoringZone) => void
+  activeAlerts?: PublicAlert[]
   fieldReports?: FieldReport[]
-  onCoordinateClick?: (lat: number, lng: number) => void
+  regionBounds?: { minLat: number; maxLat: number; minLng: number; maxLng: number }
+  onAnalyzePoint?: (lat: number, lng: number) => void
+  levelFilter: 'all' | RiskLevel
+  onLevelFilterChange: (level: 'all' | RiskLevel) => void
 }
 
-type MapLayerType = 'satellite' | 'dark' | 'streets'
+/** Same three styles and labels as the Android map (RiskMapStyle). */
+type MapStyle = 'streets' | 'terrain' | 'satellite'
 
-const MAP_LAYERS: Record<MapLayerType, { name: string; url: string; attribution: string; className?: string }> = {
-  satellite: {
-    name: 'Satellite (Esri)',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-  },
-  dark: {
-    name: 'Cyber Dark (OSM)',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    className: 'cyber-dark-tiles',
-  },
+const MAP_STYLES: Record<MapStyle, { label: string; url: string; attribution: string; maxZoom: number }> = {
   streets: {
-    name: 'Terrain / Topo',
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
+    label: 'Map',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19,
+  },
+  terrain: {
+    label: 'Terrain',
+    url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: 'Map data &copy; OpenStreetMap contributors, SRTM | Style &copy; OpenTopoMap',
+    maxZoom: 17,
+  },
+  satellite: {
+    label: 'Satellite',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
+    maxZoom: 18,
   },
 }
 
-// 5 km broad coverage radius standard across all monitoring zones
-const ZONE_BROAD_RADIUS_METERS = 5000
+/** Monitored areas are 15 km landslide clusters (RegionalAnalytics.CLUSTER_RADIUS_KM). */
+const AREA_RADIUS_M = 15_000
 
-// Helper component to pan map smoothly when selection changes
-function MapFlyController({ targetLat, targetLng }: { targetLat?: number; targetLng?: number }) {
+function MapController({
+  targetLocation,
+  targetBounds,
+}: {
+  targetLocation?: { lat: number; lng: number; zoom?: number } | null
+  targetBounds?: LatLngBoundsExpression | null
+}) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (targetLocation) {
+      map.flyTo([targetLocation.lat, targetLocation.lng], targetLocation.zoom || 12, { duration: 1.2 })
+    }
+  }, [targetLocation, map])
+
+  useEffect(() => {
+    if (targetBounds) {
+      map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 13 })
+    }
+  }, [targetBounds, map])
+
+  return null
+}
+
+function FlyTo({ lat, lng }: { lat?: number; lng?: number }) {
   const map = useMap()
   useEffect(() => {
-    if (targetLat !== undefined && targetLng !== undefined) {
-      map.flyTo([targetLat, targetLng], Math.max(map.getZoom(), 9), { duration: 1.2 })
+    if (lat !== undefined && lng !== undefined) {
+      map.flyTo([lat, lng], Math.max(map.getZoom(), 11), { duration: 1.0 })
     }
-  }, [targetLat, targetLng, map])
+  }, [lat, lng, map])
   return null
 }
 
-// Click listener on map to capture arbitrary coordinates
-function MapClickCapture({ onCoordSelect }: { onCoordSelect: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    click(e) {
-      onCoordSelect(Number(e.latlng.lat.toFixed(4)), Number(e.latlng.lng.toFixed(4)))
-    },
-  })
+function FitRegion({ bounds }: { bounds?: LatLngBoundsExpression }) {
+  const map = useMap()
+  const done = useRef(false)
+  useEffect(() => {
+    const container = map.getContainer()
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize()
+      if (bounds && !done.current && container.clientHeight > 0) {
+        const wide = container.clientWidth >= 900
+        map.fitBounds(bounds, { paddingTopLeft: [wide ? 360 : 16, 64], paddingBottomRight: [16, 56] })
+        done.current = true
+      }
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [bounds, map])
   return null
 }
 
-export default function RiskMap({ zones, selectedId, onSelect, fieldReports = [], onCoordinateClick }: Props) {
-  const [activeLayer, setActiveLayer] = useState<MapLayerType>('satellite')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterLevel, setFilterLevel] = useState<'all' | 'critical' | 'high' | 'blocked' | 'deform'>('all')
+function ClickCapture({ onClick }: { onClick: (lat: number, lng: number) => void }) {
+  useMapEvents({ click: (e) => onClick(Number(e.latlng.lat.toFixed(4)), Number(e.latlng.lng.toFixed(4))) })
+  return null
+}
+
+function ReportMarker({
+  report,
+  isSelected,
+  onSelect,
+  onDelete,
+}: {
+  report: FieldReport
+  isSelected: boolean
+  onSelect: () => void
+  onDelete: (id: string) => void
+}) {
+  const markerRef = useRef<LeafletCircleMarker | null>(null)
+
+  useEffect(() => {
+    if (isSelected && markerRef.current) {
+      markerRef.current.openPopup()
+    }
+  }, [isSelected])
+
+  return (
+    <CircleMarker
+      ref={markerRef}
+      center={[report.lat, report.lng]}
+      radius={isSelected ? 10 : 7}
+      pathOptions={{
+        color: '#ffffff',
+        fillColor: isSelected ? '#EA580C' : '#C98A1E',
+        fillOpacity: 1,
+        weight: isSelected ? 3 : 2,
+      }}
+      eventHandlers={{
+        click: () => onSelect(),
+      }}
+    >
+      <Popup minWidth={220} maxWidth={280}>
+        <div className="space-y-2 p-1 text-[12px]">
+          <div className="flex items-center justify-between gap-2 border-b border-line pb-1.5">
+            <p className="font-bold text-ochre flex items-center gap-1">
+              <MapPin className="h-3.5 w-3.5" /> Field report
+            </p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(report.id)
+              }}
+              title="Delete this field report"
+              className="flex items-center gap-1 rounded bg-critical-bg px-1.5 py-0.5 text-[10px] font-bold text-critical hover:bg-critical/20"
+            >
+              <Trash2 className="h-3 w-3" /> Delete
+            </button>
+          </div>
+          <p className="font-medium text-ink leading-relaxed">{report.note}</p>
+          {report.photoDataUrl && (
+            <img
+              src={report.photoDataUrl}
+              alt="Field observation"
+              className="max-h-36 w-full rounded-lg object-cover"
+            />
+          )}
+          <div className="flex items-center justify-between text-[11px] text-ink-3 pt-1 border-t border-line font-mono">
+            <span>{report.zoneName}</span>
+            <span>{new Date(report.createdAt).toLocaleDateString()}</span>
+          </div>
+        </div>
+      </Popup>
+    </CircleMarker>
+  )
+}
+
+export default function RiskMap({
+  zones,
+  selectedId,
+  onSelect,
+  activeAlerts = [],
+  fieldReports = [],
+  regionBounds,
+  onAnalyzePoint,
+  levelFilter,
+  onLevelFilterChange,
+}: Props) {
+  const queryClient = useQueryClient()
+  const [style, setStyle] = useState<MapStyle>('terrain')
+  const [search, setSearch] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [showAreas, setShowAreas] = useState(true)
   const [showReports, setShowReports] = useState(true)
-  const [showBroadCorridors, setShowBroadCorridors] = useState(true)
-  const [clickedCoord, setClickedCoord] = useState<{ lat: number; lng: number } | null>(null)
+  const [clicked, setClicked] = useState<{ lat: number; lng: number } | null>(null)
+  const [targetLocation, setTargetLocation] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
+  const [targetBounds, setTargetBounds] = useState<LatLngBoundsExpression | null>(null)
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
 
-  const defaultCenter: [number, number] = [27.8, 93.8]
-  const selectedZone = zones.find((z) => z.id === selectedId)
+  const selected = zones.find((z) => z.id === selectedId)
+  const alertedZoneIds = new Set(activeAlerts.map((a) => a.zoneId))
+  const bounds: LatLngBoundsExpression | undefined = regionBounds
+    ? [[regionBounds.minLat, regionBounds.minLng], [regionBounds.maxLat, regionBounds.maxLng]]
+    : undefined
 
-  // Filtering zones
-  const filteredZones = zones.filter((zone) => {
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      const match = zone.name.toLowerCase().includes(q) || zone.district.toLowerCase().includes(q)
-      if (!match) return false
+  const q = search.trim().toLowerCase()
+
+  const matchingZones = useMemo(() => {
+    if (!q) return []
+    return zones
+      .filter((z) => z.name.toLowerCase().includes(q) || z.state.toLowerCase().includes(q))
+      .slice(0, 8)
+  }, [zones, q])
+
+  const visible = zones.filter(
+    (z) =>
+      (levelFilter === 'all' || z.risk.level === levelFilter) &&
+      (!q || z.name.toLowerCase().includes(q) || z.state.toLowerCase().includes(q)),
+  )
+
+  const count = (level: RiskLevel) => zones.filter((z) => z.risk.level === level).length
+
+  const handleSelectZone = (zone: MonitoringZone) => {
+    onSelect(zone)
+    setTargetLocation({ lat: zone.lat, lng: zone.lng, zoom: 12 })
+    setSearch(zone.name)
+    setSearchFocused(false)
+  }
+
+  const handleReportsButtonClick = () => {
+    setShowReports(true)
+    if (fieldReports.length === 0) {
+      alert('No field reports recorded yet. Observations submitted from the field will appear here.')
+      return
     }
+    if (fieldReports.length === 1) {
+      const rep = fieldReports[0]
+      setTargetLocation({ lat: rep.lat, lng: rep.lng, zoom: 13 })
+      setSelectedReportId(rep.id)
+    } else {
+      const coords: [number, number][] = fieldReports.map((r) => [r.lat, r.lng])
+      setTargetBounds(coords)
+      setSelectedReportId(fieldReports[0].id)
+    }
+  }
 
-    if (filterLevel === 'critical') return zone.riskLevel === 'critical'
-    if (filterLevel === 'high') return zone.riskLevel === 'high' || zone.riskLevel === 'critical'
-    if (filterLevel === 'blocked') return zone.roadStatus === 'blocked' || zone.roadStatus === 'restricted'
-    if (filterLevel === 'deform') return (zone.deformationRateMm ?? 0) >= 15
-    return true
-  })
-
-  const handleCoordClick = (lat: number, lng: number) => {
-    setClickedCoord({ lat, lng })
-    if (onCoordinateClick) {
-      onCoordinateClick(lat, lng)
+  const handleDeleteReport = async (id: string) => {
+    if (window.confirm('Delete this field report?')) {
+      try {
+        await deleteReport(id)
+        queryClient.invalidateQueries({ queryKey: ['reports'] })
+      } catch (err) {
+        alert((err as Error).message || 'Failed to delete report')
+      }
     }
   }
 
   return (
-    <div className="map-frame h-130 w-full overflow-hidden rounded-xl border border-[#1f2b27] relative">
-      {/* Top Map Control Bar */}
-      <div className="absolute top-3 left-3 right-3 z-1000 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        {/* Search Input */}
-        <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-[#2c3e38] bg-[#0d1211]/90 px-3 py-1.5 backdrop-blur-md shadow-lg w-64 sm:w-72">
-          <Search className="h-3.5 w-3.5 text-[#9bb0a6]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search settlement or district..."
-            className="w-full bg-transparent text-xs text-[#f0f5f2] placeholder-[#596b63] focus:outline-none"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="text-[10px] text-[#9bb0a6] hover:text-white"
-            >
-              ×
-            </button>
+    <div className="relative h-full w-full overflow-hidden">
+      {/* Search + style switcher (Android: floating glass controls) */}
+      <div className="pointer-events-none absolute left-3 right-3 top-3 z-[1000] flex flex-wrap items-start justify-between gap-2">
+        {/* Search input with autocomplete dropdown */}
+        <div className="relative w-full max-w-xs pointer-events-auto">
+          <label className="glass flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 shadow-sm border border-line focus-within:border-brand">
+            <Search className="h-4 w-4 text-ink-3 shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setSearchFocused(true)
+              }}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => {
+                setTimeout(() => setSearchFocused(false), 250)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  if (matchingZones.length > 0) handleSelectZone(matchingZones[0])
+                } else if (e.key === 'Escape') {
+                  setSearchFocused(false)
+                }
+              }}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck="false"
+              placeholder="Search area or state…"
+              className="w-full bg-transparent text-[13px] text-ink placeholder:text-ink-3 focus:outline-none"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('')
+                  setSearchFocused(false)
+                }}
+                className="text-ink-3 hover:text-ink p-0.5 rounded-full"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </label>
+
+          {/* Autocomplete Dropdown */}
+          {searchFocused && q && (
+            <div className="absolute left-0 right-0 top-full mt-1.5 z-[1200] max-h-64 overflow-y-auto rounded-2xl glass p-1.5 shadow-xl border border-line bg-surface/95 backdrop-blur-md">
+              {matchingZones.length > 0 ? (
+                matchingZones.map((zone) => (
+                  <button
+                    key={zone.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleSelectZone(zone)
+                    }}
+                    className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-brand-container"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-bold text-ink">{zone.name}</p>
+                      <p className="text-[11px] text-ink-3">{zone.state}</p>
+                    </div>
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0"
+                      style={{
+                        background: riskMeta[zone.risk.level].container,
+                        color: riskMeta[zone.risk.level].accent,
+                      }}
+                    >
+                      {zone.risk.score} · {riskMeta[zone.risk.level].label}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-2.5 text-[12px] text-ink-3 text-center">
+                  No monitored area matching &ldquo;{search}&rdquo;
+                </div>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Layer Switcher & Broad Zones Toggle */}
-        <div className="pointer-events-auto flex items-center gap-1.5 rounded-lg border border-[#2c3e38] bg-[#0d1211]/90 p-1 backdrop-blur-md shadow-lg">
-          <Layers className="h-3.5 w-3.5 text-cyan-400 mx-1.5" />
-          {(['satellite', 'dark', 'streets'] as MapLayerType[]).map((layer) => (
+        {/* Style & layer switcher */}
+        <div className="glass pointer-events-auto flex items-center gap-1 rounded-2xl p-1.5">
+          <Layers className="mx-1 h-4 w-4 text-ink-3" />
+          {(Object.keys(MAP_STYLES) as MapStyle[]).map((key) => (
             <button
-              key={layer}
-              onClick={() => setActiveLayer(layer)}
-              className={`rounded px-2 py-1 text-[11px] font-medium transition-all ${
-                activeLayer === layer
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                  : 'text-[#9bb0a6] hover:text-[#f0f5f2]'
-              }`}
+              key={key}
+              onClick={() => setStyle(key)}
+              className={`rounded-[11px] px-3 py-1.5 text-[12px] font-bold transition-colors ${style === key ? 'bg-brand text-white' : 'text-ink-2 hover:bg-elevated'}`}
             >
-              {MAP_LAYERS[layer].name.split(' ')[0]}
+              {MAP_STYLES[key].label}
             </button>
           ))}
-          <span className="h-3 w-px bg-[#1f2b27] mx-1" />
+          <span className="mx-1 h-4 w-px bg-line" />
           <button
-            onClick={() => setShowBroadCorridors(!showBroadCorridors)}
-            className={`rounded px-2 py-1 text-[11px] font-medium transition-all flex items-center gap-1 ${
-              showBroadCorridors
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'text-[#596b63] hover:text-[#9bb0a6]'
-            }`}
-            title="Toggle 5 km broad coverage zones"
+            type="button"
+            onClick={() => setShowAreas((v) => !v)}
+            title="Show monitored area extents (15 km clusters)"
+            className={`flex items-center gap-1 rounded-[11px] px-2.5 py-1.5 text-[12px] font-bold transition-colors ${showAreas ? 'bg-brand-container text-brand' : 'text-ink-3 hover:bg-elevated'}`}
           >
-            <Radio className="h-3 w-3" /> Broad Zones (5km)
+            <Radio className="h-3.5 w-3.5" /> Areas
           </button>
           <button
-            onClick={() => setShowReports(!showReports)}
-            className={`rounded px-2 py-1 text-[11px] font-medium transition-all flex items-center gap-1 ${
-              showReports
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                : 'text-[#596b63] hover:text-[#9bb0a6]'
-            }`}
-            title="Toggle ground truth field report markers"
+            type="button"
+            onClick={handleReportsButtonClick}
+            title="Take me to field reports on the map"
+            className={`flex items-center gap-1 rounded-[11px] px-2.5 py-1.5 text-[12px] font-bold transition-colors ${showReports ? 'bg-sand text-ochre ring-1 ring-ochre/30' : 'text-ink-3 hover:bg-elevated'}`}
           >
-            <MapPin className="h-3 w-3" /> Field Obs
+            <MapPin className="h-3.5 w-3.5" /> Reports {fieldReports.length > 0 ? `(${fieldReports.length})` : ''}
           </button>
         </div>
       </div>
 
-      {/* Filter Chips Overlay */}
-      <div className="absolute bottom-3 left-3 z-1000 flex flex-wrap gap-1.5 pointer-events-auto max-w-[80%]">
+      {/* Severity filter chips — same set as the Android Risk/Alerts filters */}
+      <div className="absolute bottom-3 left-3 z-[1000] flex max-w-[calc(100%-1.5rem)] flex-wrap gap-1.5">
         <button
-          onClick={() => setFilterLevel('all')}
-          className={`rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur-md transition-all ${
-            filterLevel === 'all'
-              ? 'bg-[#1f2b27] text-white border border-emerald-500/50'
-              : 'bg-[#0d1211]/80 text-[#9bb0a6] border border-[#1f2b27] hover:border-[#2c3e38]'
-          }`}
+          onClick={() => onLevelFilterChange('all')}
+          className={`rounded-full border px-3 py-1.5 text-[12px] font-bold shadow-sm transition-colors ${levelFilter === 'all' ? 'border-brand bg-brand text-white' : 'border-line bg-surface text-ink-2'}`}
         >
-          All Zones ({zones.length})
+          All · {zones.length}
         </button>
-        <button
-          onClick={() => setFilterLevel('critical')}
-          className={`rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur-md transition-all ${
-            filterLevel === 'critical'
-              ? 'bg-red-500/25 text-red-300 border border-red-500'
-              : 'bg-[#0d1211]/80 text-red-400/80 border border-[#1f2b27] hover:border-red-500/40'
-          }`}
-        >
-          🚨 Critical Only ({zones.filter((z) => z.riskLevel === 'critical').length})
-        </button>
-        <button
-          onClick={() => setFilterLevel('blocked')}
-          className={`rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur-md transition-all ${
-            filterLevel === 'blocked'
-              ? 'bg-amber-500/25 text-amber-300 border border-amber-500'
-              : 'bg-[#0d1211]/80 text-amber-400/80 border border-[#1f2b27] hover:border-amber-500/40'
-          }`}
-        >
-          🚧 Blocked Roads ({zones.filter((z) => z.roadStatus !== 'open').length})
-        </button>
-        <button
-          onClick={() => setFilterLevel('deform')}
-          className={`rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur-md transition-all ${
-            filterLevel === 'deform'
-              ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500'
-              : 'bg-[#0d1211]/80 text-cyan-400/80 border border-[#1f2b27] hover:border-cyan-500/40'
-          }`}
-        >
-          📡 High InSAR Deform ({zones.filter((z) => (z.deformationRateMm ?? 0) >= 15).length})
-        </button>
+        {RISK_LEVELS.map((level) => (
+          <button
+            key={level}
+            onClick={() => onLevelFilterChange(level)}
+            className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-bold shadow-sm transition-colors"
+            style={
+              levelFilter === level
+                ? { background: riskMeta[level].accent, borderColor: riskMeta[level].accent, color: '#fff' }
+                : { background: riskMeta[level].container, borderColor: `${riskMeta[level].accent}40`, color: riskMeta[level].accent }
+            }
+          >
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ background: levelFilter === level ? '#fff' : riskMeta[level].accent }}
+            />
+            {riskMeta[level].label} · {count(level)}
+          </button>
+        ))}
       </div>
 
-      {/* Map Legend on bottom right */}
-      <div className="absolute bottom-3 right-3 z-1000 hidden sm:flex items-center gap-2 rounded-lg border border-[#1f2b27] bg-[#0d1211]/85 px-3 py-1.5 text-[10px] text-[#9bb0a6] backdrop-blur-md">
-        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]" /> Critical</span>
-        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> High</span>
-        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-yellow-500" /> Moderate</span>
-        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Stable</span>
-      </div>
-
-      {/* Leaflet Map */}
       <MapContainer
-        center={selectedZone ? [selectedZone.lat, selectedZone.lng] : defaultCenter}
-        zoom={selectedZone ? 10 : 8}
-        scrollWheelZoom={true}
+        center={[26.2, 92.9]}
+        zoom={7}
+        minZoom={5}
+        scrollWheelZoom
         attributionControl={false}
+        zoomControl={false}
         style={{ height: '100%', width: '100%' }}
       >
+        <ZoomControl position="bottomright" />
         <TileLayer
-          key={activeLayer}
-          attribution={MAP_LAYERS[activeLayer].attribution}
-          url={MAP_LAYERS[activeLayer].url}
-          maxZoom={18}
+          key={style}
+          url={MAP_STYLES[style].url}
+          maxZoom={MAP_STYLES[style].maxZoom}
         />
+        <FitRegion bounds={bounds} />
+        <MapController targetLocation={targetLocation} targetBounds={targetBounds} />
+        <FlyTo lat={selected?.lat} lng={selected?.lng} />
+        {onAnalyzePoint && <ClickCapture onClick={(lat, lng) => setClicked({ lat, lng })} />}
 
-        <MapFlyController targetLat={selectedZone?.lat} targetLng={selectedZone?.lng} />
-        <MapClickCapture onCoordSelect={handleCoordClick} />
+        {bounds && (
+          <Rectangle
+            bounds={bounds}
+            pathOptions={{ color: '#1B5E37', weight: 1.2, dashArray: '6 6', fillOpacity: 0 }}
+            interactive={false}
+          />
+        )}
 
-        {/* Clicked coordinate pin */}
-        {clickedCoord && (
-          <Popup position={[clickedCoord.lat, clickedCoord.lng]} eventHandlers={{ remove: () => setClickedCoord(null) }}>
-            <div className="p-1 space-y-2 text-xs">
-              <p className="font-mono font-semibold text-cyan-400 flex items-center gap-1">
-                <Compass className="h-3.5 w-3.5" /> Target Coordinates
-              </p>
-              <p className="font-mono text-[#9bb0a6]">
-                {clickedCoord.lat}°N, {clickedCoord.lng}°E
+        {clicked && onAnalyzePoint && (
+          <Popup position={[clicked.lat, clicked.lng]} eventHandlers={{ remove: () => setClicked(null) }}>
+            <div className="space-y-2 text-[12px]">
+              <p className="flex items-center gap-1 font-bold text-ink">
+                <Crosshair className="h-3.5 w-3.5" /> {clicked.lat.toFixed(4)}°N, {clicked.lng.toFixed(4)}°E
               </p>
               <button
                 onClick={() => {
-                  window.location.href = `/simulate?lat=${clickedCoord.lat}&lng=${clickedCoord.lng}`
+                  onAnalyzePoint(clicked.lat, clicked.lng)
+                  setClicked(null)
                 }}
-                className="w-full rounded bg-cyan-500 px-2 py-1 text-[11px] font-semibold text-black hover:bg-cyan-400 transition-colors"
+                className="w-full rounded-lg bg-brand px-3 py-1.5 text-[12px] font-bold text-white hover:bg-brand-dark"
               >
-                Simulate ML Risk at Point
+                Analyse this location
               </button>
             </div>
           </Popup>
         )}
 
-        {/* 5 km Broad Coverage Zones */}
-        {filteredZones.map((zone) => {
-          const riskRate = zone.landslideRate ?? zone.riskScore
-          const color = mapColor(levelFromScore(riskRate))
-          const isProne = isLandslideProne(riskRate)
+        {visible.map((zone) => {
+          const color = riskMeta[zone.risk.level].accent
           const isSelected = zone.id === selectedId
-          const coverageRadius = ZONE_BROAD_RADIUS_METERS
-
+          const elevated = zone.risk.level === 'high' || zone.risk.level === 'critical'
+          const alerted = alertedZoneIds.has(zone.id)
           return (
-            <Fragment key={`zone-broad-${zone.id}`}>
-              {/* Broad 5 km Geographic Coverage Circle */}
-              {showBroadCorridors && (
+            <Fragment key={zone.id}>
+              {showAreas && (
                 <Circle
                   center={[zone.lat, zone.lng]}
-                  radius={coverageRadius}
+                  radius={AREA_RADIUS_M}
                   pathOptions={{
-                    color: isSelected ? '#06b6d4' : color,
+                    color: isSelected ? '#1B5E37' : color,
                     fillColor: color,
-                    fillOpacity: isSelected ? 0.24 : isProne ? 0.16 : 0.09,
-                    weight: isSelected ? 2.5 : 1.2,
-                    dashArray: isSelected ? undefined : '4, 6',
+                    fillOpacity: isSelected ? 0.22 : elevated ? 0.14 : 0.07,
+                    weight: isSelected ? 2.5 : 1,
+                    dashArray: isSelected ? undefined : '4 6',
                   }}
                   eventHandlers={{ click: () => onSelect(zone) }}
-                >
-                  <Tooltip direction="top" offset={[0, -12]} opacity={0.96}>
-                    <div className="text-xs p-1 space-y-1">
-                      <div className="flex items-center justify-between gap-2 border-b border-[#2c3e38] pb-0.5">
-                        <p className="font-bold text-[#f0f5f2]">{zone.name}</p>
-                        <span className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[9px] text-cyan-300">
-                          5.0 km corridor (~78.5 km²)
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-[#9bb0a6]">{zone.district} District</p>
-                      <div className="flex items-center gap-2 pt-0.5 font-mono text-[10px]">
-                        <span className="font-bold" style={{ color }}>{riskRate}% Risk</span>
-                        <span>• {zone.rainfall24h}mm Rain</span>
-                        <span>• {zone.roadStatus.toUpperCase()}</span>
-                      </div>
-                    </div>
-                  </Tooltip>
-                </Circle>
+                />
               )}
-
-              {/* Critical Alert Outer Pulsing Ring */}
-              {isProne && (
+              {(elevated || alerted) && (
                 <CircleMarker
                   center={[zone.lat, zone.lng]}
-                  radius={isSelected ? 24 : 17}
+                  radius={isSelected ? 22 : 16}
                   pathOptions={{
-                    className: 'risk-zone-ring-blink',
-                    color,
+                    className: 'zone-ring-pulse',
+                    color: alerted ? '#DC2626' : color,
                     fillOpacity: 0,
-                    opacity: 0.95,
-                    weight: 2.2,
+                    weight: alerted ? 3 : 2,
                   }}
                   interactive={false}
                 />
               )}
-
-              {/* Center Settlement Tactical Pin */}
               <CircleMarker
                 center={[zone.lat, zone.lng]}
-                radius={isSelected ? 14 : 9}
+                radius={isSelected ? 11 : 7}
                 pathOptions={{
-                  className: isProne ? 'risk-zone-blink' : undefined,
-                  color: isSelected ? '#ffffff' : color,
+                  color: '#ffffff',
                   fillColor: color,
-                  fillOpacity: 0.9,
-                  weight: isSelected ? 3 : 1.5,
+                  fillOpacity: 1,
+                  weight: isSelected ? 3 : 2,
                 }}
                 eventHandlers={{ click: () => onSelect(zone) }}
-              />
-
-              {/* Selected Zone Focus Halo */}
-              {isSelected && (
-                <Circle
-                  center={[zone.lat, zone.lng]}
-                  radius={coverageRadius + 1500}
-                  pathOptions={{
-                    color: '#06b6d4',
-                    fillOpacity: 0.04,
-                    weight: 1.5,
-                    dashArray: '3, 6',
-                  }}
-                  interactive={false}
-                />
-              )}
+              >
+                <Tooltip direction="top" offset={[0, -8]} opacity={1}>
+                  <div className="space-y-0.5">
+                    <p className="text-[12.5px] font-bold text-ink">{zone.name}</p>
+                    <p className="text-[11px] text-ink-3">{zone.state}</p>
+                    <p className="text-[11.5px] font-bold" style={{ color }}>
+                      {riskMeta[zone.risk.level].label} · {zone.risk.score}/100{alerted ? ' · ALERT ACTIVE' : ''}
+                    </p>
+                  </div>
+                </Tooltip>
+              </CircleMarker>
             </Fragment>
           )
         })}
 
-        {/* Field Report Pins Overlay */}
         {showReports &&
           fieldReports.map((report) => (
-            <CircleMarker
+            <ReportMarker
               key={report.id}
-              center={[report.lat, report.lng]}
-              radius={6}
-              pathOptions={{
-                color: '#f59e0b',
-                fillColor: '#f59e0b',
-                fillOpacity: 0.9,
-                weight: 2,
-              }}
-            >
-              <Popup>
-                <div className="p-1 space-y-1.5 text-xs max-w-xs">
-                  <div className="flex items-center justify-between border-b border-[#1f2b27] pb-1">
-                    <span className="font-semibold text-amber-400 flex items-center gap-1">
-                      <MapPin className="h-3 w-3" /> Field Observation
-                    </span>
-                    <span className="font-mono text-[10px] text-[#596b63]">
-                      {new Date(report.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#f0f5f2]">{report.note}</p>
-                  {report.photoDataUrl && (
-                    <img
-                      src={report.photoDataUrl}
-                      alt="Field Observation"
-                      className="rounded border border-[#1f2b27] max-h-32 w-full object-cover"
-                    />
-                  )}
-                  <p className="font-mono text-[10px] text-[#9bb0a6]">
-                    Location: {report.lat.toFixed(3)}°N, {report.lng.toFixed(3)}°E
-                  </p>
-                </div>
-              </Popup>
-            </CircleMarker>
+              report={report}
+              isSelected={selectedReportId === report.id}
+              onSelect={() => setSelectedReportId(report.id)}
+              onDelete={handleDeleteReport}
+            />
           ))}
       </MapContainer>
     </div>

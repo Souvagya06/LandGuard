@@ -1,130 +1,156 @@
-import type { Zone, AlertItem, FieldReport, BackendHealth, DeviceStats, SimulationParams, PredictionResponse } from '../types'
-import { mockAlerts } from '../data/mockZones'
+import type {
+  AlertRecord, DeviceList, FieldReport, LocationAnalysis, MonitoringSummary, MonitoringZone, MonitoringZonesResponse,
+  PredictionResponse, PublicAlert, RiskLevel, SessionUser, SimulationParams, SystemStatus, Zone,
+} from '../types'
+import { API_BASE } from './config'
 
-// Configure VITE_API_URL to use the FastAPI / Express service in production.
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
+export { API_BASE }
 
-export async function fetchZones(): Promise<Zone[]> {
-  const res = await fetch(`${API_BASE}/zones`)
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Live zone telemetry is unavailable')
-  }
-  const data = await res.json()
-  if (!Array.isArray(data) || !data.length) throw new Error('No live zones were returned')
-  return data
+// ─────────────────────────────────────────────────────────────
+// Session — the bearer token lives only for this browser tab.
+// ─────────────────────────────────────────────────────────────
+
+const SESSION_KEY = 'landguard.session'
+
+export interface Session {
+  token: string
+  expiresAt: string
+  user: SessionUser
 }
 
-export async function fetchZone(id: string): Promise<Zone | undefined> {
-  const res = await fetch(`${API_BASE}/zones/${id}`)
-  if (!res.ok) throw new Error('Failed to fetch zone')
-  return res.json()
-}
-
-export async function fetchAlerts(): Promise<AlertItem[]> {
+export function readSession(): Session | null {
   try {
-    const res = await fetch(`${API_BASE}/alerts`)
-    if (!res.ok) throw new Error('Failed to fetch alerts')
-    const data = await res.json()
-    return Array.isArray(data) ? data : mockAlerts
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+    const session = JSON.parse(raw) as Session
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      sessionStorage.removeItem(SESSION_KEY)
+      return null
+    }
+    return session
   } catch {
-    return mockAlerts
+    return null
   }
 }
 
-export async function triggerAlert(payload: {
-  zoneId: string
-  level?: 'low' | 'moderate' | 'high' | 'critical' | 'casual'
-  message?: string
-  channel?: 'push' | 'sms' | 'dashboard' | 'popup' | 'app' | 'sms-app'
-}): Promise<AlertItem> {
-  const res = await fetch(`${API_BASE}/alerts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Failed to dispatch alert')
-  }
-  return res.json()
-}
-
-export async function approveAlert(id: string): Promise<AlertItem> {
-  const res = await fetch(`${API_BASE}/alerts/${id}/approve`, { method: 'POST' })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Failed to approve alert')
-  }
-  return res.json()
-}
-
-export async function verifyReport(id: string, verdict: 'verified' | 'rejected', note = ''): Promise<FieldReport> {
-  const res = await fetch(`${API_BASE}/reports/${id}/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verdict, note }) })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Failed to review report')
-  }
-  return res.json()
-}
-
-export async function fetchReports(): Promise<FieldReport[]> {
+function writeSession(session: Session | null) {
   try {
-    const res = await fetch(`${API_BASE}/reports`)
-    if (!res.ok) throw new Error('Failed to fetch field reports')
-    const data = await res.json()
-    return Array.isArray(data) ? data : []
-  } catch (err) {
-    console.warn('[API] Failed to fetch field reports:', err)
-    return []
-  }
-}
-
-export async function submitReport(payload: {
-  zoneId: string
-  zoneName: string
-  note: string
-  photoDataUrl?: string
-  lat: number
-  lng: number
-}): Promise<{ ok: boolean; report: FieldReport }> {
-  const res = await fetch(`${API_BASE}/reports`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Failed to submit report')
-  }
-  return res.json()
-}
-
-export async function fetchHealth(): Promise<BackendHealth> {
-  const res = await fetch(`${API_BASE}/health`)
-  if (!res.ok) throw new Error('Backend health check failed')
-  return res.json()
-}
-
-export async function fetchDevices(): Promise<DeviceStats> {
-  try {
-    const res = await fetch(`${API_BASE}/devices`)
-    if (!res.ok) throw new Error('Failed to fetch device stats')
-    return res.json()
+    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    else sessionStorage.removeItem(SESSION_KEY)
   } catch {
-    return { registeredDevices: 0, androidDevices: 0 }
+    /* storage unavailable: the session lasts for this page view only */
+  }
+  window.dispatchEvent(new Event('landguard:session'))
+}
+
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
   }
 }
 
-export async function predictRisk(params: SimulationParams): Promise<PredictionResponse> {
-  const res = await fetch(`${API_BASE}/predict`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'ML prediction inference failed')
+async function request<T>(path: string, init: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (init.body !== undefined) headers['Content-Type'] = 'application/json'
+  const session = readSession()
+  if (init.auth !== false && session) headers.Authorization = `Bearer ${session.token}`
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: init.method || 'GET',
+      headers,
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      cache: 'no-store',
+    })
+  } catch {
+    throw new ApiError(0, 'LandGuard API is unreachable. Check the connection.')
   }
-  return res.json()
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+  if (!res.ok) {
+    if (res.status === 401 && session) writeSession(null)
+    throw new ApiError(res.status, data?.detail || `Request failed (${res.status})`)
+  }
+  return data as T
 }
+
+// ─────────────────────────────────────────────────────────────
+// Auth
+// ─────────────────────────────────────────────────────────────
+
+export const fetchAuthConfig = () => request<{ authRequired: boolean }>('/auth/config', { auth: false })
+
+export async function signIn(username: string, password: string): Promise<Session> {
+  const session = await request<Session>('/auth/login', { method: 'POST', body: { username, password }, auth: false })
+  writeSession(session)
+  return session
+}
+
+export function signOut() {
+  writeSession(null)
+}
+
+export const fetchSession = () => request<{ user: SessionUser; development: boolean; expiresAt: string | null }>('/auth/session')
+
+// ─────────────────────────────────────────────────────────────
+// Monitoring — same backend source as the Android app
+// ─────────────────────────────────────────────────────────────
+
+export const fetchMonitoringZones = () => request<MonitoringZonesResponse>('/monitoring/zones')
+export const fetchMonitoringSummary = () => request<MonitoringSummary>('/monitoring/summary')
+export const fetchMonitoringZone = (id: string) => request<MonitoringZone>(`/monitoring/zones/${encodeURIComponent(id)}`)
+export const fetchAnalysis = (lat: number, lng: number) =>
+  request<LocationAnalysis>(`/monitoring/analysis?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}`)
+export const refreshMonitoring = () => request<MonitoringSummary>('/monitoring/refresh', { method: 'POST', body: {} })
+
+// ─────────────────────────────────────────────────────────────
+// Alerts
+// ─────────────────────────────────────────────────────────────
+
+export const fetchAuthorityAlerts = () => request<AlertRecord[]>('/alerts?view=authority&limit=300')
+export const fetchPublicAlert = (id: string) => request<PublicAlert>(`/alerts/${encodeURIComponent(id)}`)
+
+export interface CreateAlertInput {
+  zoneId: string
+  level: RiskLevel
+  message: string
+  expiresInMinutes: number
+  clientRequestId: string
+}
+
+export const createAlert = (input: CreateAlertInput) =>
+  request<AlertRecord>('/alerts', { method: 'POST', body: { ...input, origin: 'authority_web', channel: 'push' } })
+export const approveAlert = (id: string) => request<AlertRecord>(`/alerts/${encodeURIComponent(id)}/approve`, { method: 'POST' })
+export const cancelAlert = (id: string) => request<AlertRecord>(`/alerts/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+
+// ─────────────────────────────────────────────────────────────
+// System & devices
+// ─────────────────────────────────────────────────────────────
+
+export const fetchSystemStatus = () => request<SystemStatus>('/system/status')
+export const fetchDevices = () => request<DeviceList>('/devices')
+export const fetchHealth = () => request<{ status: string; version: string; time: string }>('/health', { auth: false })
+
+// ─────────────────────────────────────────────────────────────
+// Field reports
+// ─────────────────────────────────────────────────────────────
+
+export const fetchReports = () => request<FieldReport[]>('/reports')
+
+export const submitReport = (payload: { zoneId: string; zoneName: string; note: string; photoDataUrl?: string; lat: number; lng: number }) =>
+  request<{ ok: boolean; report: FieldReport }>('/reports', { method: 'POST', body: payload })
+
+export const verifyReport = (id: string, verdict: 'verified' | 'rejected', note = '') =>
+  request<FieldReport>(`/reports/${encodeURIComponent(id)}/verify`, { method: 'POST', body: { verdict, note } })
+
+export const deleteReport = (id: string) =>
+  request<{ ok: boolean; report: FieldReport }>(`/reports/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+// ─────────────────────────────────────────────────────────────
+// Model zones & What-If simulation
+// ─────────────────────────────────────────────────────────────
+
+export const fetchZones = () => request<Zone[]>('/zones')
+export const predictRisk = (params: SimulationParams) => request<PredictionResponse>('/predict', { method: 'POST', body: params })

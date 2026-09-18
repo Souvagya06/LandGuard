@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import type { FormEvent, ChangeEvent } from 'react'
 import { submitReport } from '../lib/api'
-import type { Zone } from '../types'
+import type { ZoneRef } from '../types'
 import { Camera, MapPin, X, UploadCloud, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
-  zones: Zone[]
+  zones: ZoneRef[]
   selectedZoneId?: string
   onReportSubmitted: () => void
 }
@@ -87,37 +87,37 @@ export default function ReportSubmitModal({ isOpen, onClose, zones, selectedZone
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-fadeIn">
-      <div className="glass-panel relative w-full max-w-lg rounded-xl border border-[#2c3e38] p-6 shadow-2xl space-y-5">
-        <div className="flex items-center justify-between border-b border-[#1f2b27] pb-4">
+      <div className="card relative w-full max-w-lg rounded-[20px] border border-line p-6 shadow-2xl space-y-5">
+        <div className="flex items-center justify-between border-b border-line pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-sentinel/30 bg-[#EFF6FF] text-sentinel">
               <Camera className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-[#f0f5f2]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              <h2 className="text-lg font-bold text-ink">
                 Submit Ground Truth Observation
               </h2>
-              <p className="text-xs text-[#9bb0a6]">Report visible slope shifts, rockfall, or road blocks from the field</p>
+              <p className="text-xs text-ink-2">Report visible slope shifts, rockfall, or road blocks from the field</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg border border-[#1f2b27] p-1.5 text-[#9bb0a6] hover:border-cyan-500/50 hover:bg-[#131a18] hover:text-[#f0f5f2] transition-colors"
+            className="rounded-lg border border-line p-1.5 text-ink-2 hover:border-sentinel/30 hover:bg-surface hover:text-ink transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+          <div className="flex items-center gap-2 rounded-lg border border-critical/30 bg-critical-bg p-3 text-xs text-critical">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {success && (
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+          <div className="flex items-center gap-2 rounded-lg border border-brand/30 bg-brand-container p-3 text-xs text-brand">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-brand" />
             <span>Ground truth report synchronized successfully to LandGuard backend!</span>
           </div>
         )}
@@ -125,15 +125,15 @@ export default function ReportSubmitModal({ isOpen, onClose, zones, selectedZone
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Target Settlement Selector */}
           <div>
-            <label className="block text-xs font-medium text-[#9bb0a6] mb-1.5">Monitored Settlement / Sector</label>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Monitored Settlement / Sector</label>
             <select
               value={zoneId}
               onChange={(e) => handleZoneChange(e.target.value)}
-              className="w-full rounded-lg border border-[#1f2b27] bg-[#0d1211] px-3.5 py-2 text-sm text-[#f0f5f2] focus:border-cyan-500 focus:outline-none"
+              className="w-full rounded-lg border border-line bg-surface px-3.5 py-2 text-sm text-ink focus:border-sentinel/30 focus:outline-none"
             >
               {zones.map((z) => (
                 <option key={z.id} value={z.id}>
-                  {z.name} ({z.district}) — {z.riskLevel.toUpperCase()}
+                  {z.name}
                 </option>
               ))}
               <option value="custom">-- Custom GPS Coordinate --</option>
@@ -143,59 +143,59 @@ export default function ReportSubmitModal({ isOpen, onClose, zones, selectedZone
           {/* Coordinates display */}
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
-              <label className="block text-[#596b63] mb-1">Latitude (°N)</label>
+              <label className="block text-ink-3 mb-1">Latitude (°N)</label>
               <input
                 type="number"
                 step="0.0001"
                 value={customLat}
                 onChange={(e) => setCustomLat(Number(e.target.value))}
-                className="w-full rounded-lg border border-[#1f2b27] bg-[#0d1211] px-3 py-1.5 font-mono text-[#f0f5f2] focus:border-cyan-500 focus:outline-none"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-1.5 font-mono text-ink focus:border-sentinel/30 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-[#596b63] mb-1">Longitude (°E)</label>
+              <label className="block text-ink-3 mb-1">Longitude (°E)</label>
               <input
                 type="number"
                 step="0.0001"
                 value={customLng}
                 onChange={(e) => setCustomLng(Number(e.target.value))}
-                className="w-full rounded-lg border border-[#1f2b27] bg-[#0d1211] px-3 py-1.5 font-mono text-[#f0f5f2] focus:border-cyan-500 focus:outline-none"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-1.5 font-mono text-ink focus:border-sentinel/30 focus:outline-none"
               />
             </div>
           </div>
 
           {/* Observation Notes */}
           <div>
-            <label className="block text-xs font-medium text-[#9bb0a6] mb-1.5">Observation Notes & Impact</label>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Observation Notes & Impact</label>
             <textarea
               rows={3}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="E.g. Visible tension cracks along road shoulder, minor soil slump observed near culvert km 42..."
-              className="w-full rounded-lg border border-[#1f2b27] bg-[#0d1211] p-3 text-xs text-[#f0f5f2] placeholder-[#596b63] focus:border-cyan-500 focus:outline-none resize-none"
+              className="w-full rounded-lg border border-line bg-surface p-3 text-xs text-ink placeholder:text-ink-3 focus:border-sentinel/30 focus:outline-none resize-none"
             />
           </div>
 
           {/* Photo Upload with Preview */}
           <div>
-            <label className="block text-xs font-medium text-[#9bb0a6] mb-1.5">Field Photo Evidence (Optional)</label>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">Field Photo Evidence (Optional)</label>
             {photoDataUrl ? (
-              <div className="relative rounded-lg border border-[#1f2b27] overflow-hidden bg-[#0a0d0c] max-h-48 flex items-center justify-center">
+              <div className="relative rounded-lg border border-line overflow-hidden bg-elevated max-h-48 flex items-center justify-center">
                 <img src={photoDataUrl} alt="Preview" className="max-h-48 w-full object-cover" />
                 <button
                   type="button"
                   onClick={() => setPhotoDataUrl(undefined)}
-                  className="absolute top-2 right-2 rounded-full bg-black/70 p-1.5 text-white hover:bg-red-500 transition-colors"
+                  className="absolute top-2 right-2 rounded-full bg-black/70 p-1.5 text-white hover:bg-critical transition-colors"
                   title="Remove photo"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[#2c3e38] bg-[#0d1211] p-4 text-center cursor-pointer hover:border-cyan-500/60 hover:bg-[#131a18] transition-colors">
-                <UploadCloud className="h-6 w-6 text-cyan-400" />
-                <span className="text-xs text-[#9bb0a6]">Click to upload photo or take picture</span>
-                <span className="text-[10px] text-[#596b63]">PNG, JPG, WEBP up to 8MB</span>
+              <label className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line bg-surface p-4 text-center cursor-pointer hover:border-sentinel/30 hover:bg-surface transition-colors">
+                <UploadCloud className="h-6 w-6 text-sentinel" />
+                <span className="text-xs text-ink-2">Click to upload photo or take picture</span>
+                <span className="text-[10px] text-ink-3">PNG, JPG, WEBP up to 8MB</span>
                 <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
               </label>
             )}
@@ -206,14 +206,14 @@ export default function ReportSubmitModal({ isOpen, onClose, zones, selectedZone
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-[#1f2b27] px-4 py-2 text-xs font-medium text-[#9bb0a6] hover:bg-[#131a18] hover:text-[#f0f5f2] transition-colors"
+              className="rounded-lg border border-line px-4 py-2 text-xs font-medium text-ink-2 hover:bg-surface hover:text-ink transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting || success}
-              className="flex items-center gap-2 rounded-lg bg-cyan-500 px-5 py-2 text-xs font-semibold text-[#070a09] hover:bg-cyan-400 disabled:opacity-50 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+              className="flex items-center gap-2 rounded-lg bg-sentinel px-5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50 transition-colors"
             >
               {isSubmitting ? (
                 <>

@@ -33,8 +33,4 @@ ml/models/*.joblib
 
 # --- FCM & Credentials ---
 backend/firebase-service-account.json
-**/google-services.json
-google-services.json
-.env
-.env.local
-*.env
+backend/.env

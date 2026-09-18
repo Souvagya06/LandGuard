@@ -1,11 +1,20 @@
 import type { RiskLevel } from '../types'
 
-export const riskMeta: Record<RiskLevel, { label: string; bg: string; text: string; dot: string; range: string }> = {
-  low: { label: 'Low (<25%)', bg: 'bg-emerald-500/15', text: 'text-emerald-400 border border-emerald-500/30', dot: 'bg-emerald-500', range: '<25%' },
-  moderate: { label: 'Moderate (25–50%)', bg: 'bg-amber-500/15', text: 'text-amber-400 border border-amber-500/30', dot: 'bg-amber-500', range: '25–50%' },
-  high: { label: 'High (50–75%)', bg: 'bg-orange-500/15', text: 'text-orange-400 border border-orange-500/30', dot: 'bg-orange-500', range: '50–75%' },
-  critical: { label: 'Critical (75–100%)', bg: 'bg-red-500/15', text: 'text-red-400 border border-red-500/30', dot: 'bg-red-600', range: '75–100%' },
+/**
+ * Risk terminology and colours — identical to the Android app
+ * (Severity enum + MapFirstComponents.accent/container/label and
+ * RiskEngineService.categorizeScore thresholds 25 / 50 / 75).
+ */
+export const RISK_LEVELS: RiskLevel[] = ['critical', 'high', 'moderate', 'low']
+
+export const riskMeta: Record<RiskLevel, { label: string; accent: string; container: string; range: string }> = {
+  critical: { label: 'Critical', accent: '#DC2626', container: '#FEF2F2', range: '75–100' },
+  high: { label: 'High', accent: '#EA580C', container: '#FFF7ED', range: '50–74' },
+  moderate: { label: 'Moderate', accent: '#D97706', container: '#FFFBEB', range: '25–49' },
+  low: { label: 'Low', accent: '#16A34A', container: '#F0FDF4', range: '0–24' },
 }
+
+export const LEVEL_RANK: Record<RiskLevel, number> = { low: 0, moderate: 1, high: 2, critical: 3 }
 
 export function levelFromScore(score: number): RiskLevel {
   if (score >= 75) return 'critical'
@@ -14,23 +23,4 @@ export function levelFromScore(score: number): RiskLevel {
   return 'low'
 }
 
-export function isLandslideProne(score: number): boolean {
-  return score >= 75
-}
-
-export function isCriticalZone(score: number): boolean {
-  return score >= 75
-}
-
-export function mapColor(level: RiskLevel): string {
-  switch (level) {
-    case 'critical':
-      return '#dc2626' // Red
-    case 'high':
-      return '#ea580c' // Orange
-    case 'moderate':
-      return '#f59e0b' // Yellow / Amber
-    default:
-      return '#10b981' // Green
-  }
-}
+export const mapColor = (level: RiskLevel) => riskMeta[level].accent
