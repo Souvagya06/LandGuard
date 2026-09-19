@@ -9,10 +9,25 @@ const { toFcmData } = require('./alert-contract');
 let initError = null;
 
 function serviceAccount() {
-  const encoded = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
-  if (encoded) return JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) return JSON.parse(fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_PATH, 'utf8'));
+  const raw = (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || '').trim();
+  if (raw) {
+    // If raw JSON was provided directly in the BASE64 variable, parse it directly:
+    if (raw.startsWith('{') || (raw.startsWith("'") && raw.includes('"type"'))) {
+      const stripped = raw.replace(/^'([\s\S]*)'$/, '$1').replace(/^"([\s\S]*)"$/, '$1').trim();
+      return JSON.parse(stripped);
+    }
+    // Otherwise decode base64 (stripping any wrapper quotes or spaces):
+    const clean = raw.replace(/^['"]|['"]$/g, '').replace(/\s+/g, '');
+    const decoded = Buffer.from(clean, 'base64').toString('utf8').trim();
+    return JSON.parse(decoded);
+  }
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    const jsonStr = process.env.FIREBASE_SERVICE_ACCOUNT_JSON.replace(/^'([\s\S]*)'$/, '$1').replace(/^"([\s\S]*)"$/, '$1').trim();
+    return JSON.parse(jsonStr);
+  }
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    return JSON.parse(fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_PATH, 'utf8'));
+  }
   return null;
 }
 
