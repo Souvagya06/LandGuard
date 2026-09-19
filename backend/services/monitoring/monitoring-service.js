@@ -120,7 +120,18 @@ class MonitoringService extends EventEmitter {
       return;
     }
     const next = new Map();
-    this.hotspots.forEach((h, i) => next.set(h.id, { rainfall: rain[i] || null, terrain: this.terrainCache[h.id] || null }));
+    this.hotspots.forEach((h, i) => {
+      let r = rain[i] || null;
+      const existing = this.conditions.get(h.id);
+      if (r && r.source === sources.OWM_SOURCE && existing?.rainfall?.past72hMm) {
+        r = {
+          ...r,
+          past72hMm: existing.rainfall.past72hMm,
+          soilMoistureM3M3: existing.rainfall.soilMoistureM3M3 ?? null,
+        };
+      }
+      next.set(h.id, { rainfall: r, terrain: this.terrainCache[h.id] || null });
+    });
     this.conditions = next;
     this.conditionsUpdatedAtMillis = Date.now();
     this.persist();
