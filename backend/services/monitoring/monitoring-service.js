@@ -269,8 +269,28 @@ class MonitoringService extends EventEmitter {
   // ───────────────────────── disk cache ─────────────────────────
 
   loadDiskCache() {
+    let saved = null;
     try {
-      const saved = JSON.parse(fs.readFileSync(this.cachePath, 'utf8'));
+      if (fs.existsSync(this.cachePath)) {
+        saved = JSON.parse(fs.readFileSync(this.cachePath, 'utf8'));
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') this.log.error(`[Monitoring] Ignoring unreadable cache: ${error.message}`);
+    }
+
+    if (!saved || !saved.catalog) {
+      const seedPath = path.join(__dirname, 'seed-cache.json');
+      try {
+        if (fs.existsSync(seedPath)) {
+          saved = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+          this.log.log('[Monitoring] Initialized from bundled seed-cache.json');
+        }
+      } catch (error) {
+        this.log.error(`[Monitoring] Could not load bundled seed cache: ${error.message}`);
+      }
+    }
+
+    if (saved) {
       if (Array.isArray(saved.catalog?.events) && saved.catalog.events.length) {
         this.catalog = saved.catalog;
         this.catalogFromCache = true;
@@ -283,8 +303,6 @@ class MonitoringService extends EventEmitter {
       }
       this.zones().forEach((z) => this.levels.set(z.id, z.risk.level));
       this.log.log(`[Monitoring] Loaded cached monitoring data (${this.hotspots.length} areas, conditions ${iso(this.conditionsUpdatedAtMillis) || 'none'})`);
-    } catch (error) {
-      if (error.code !== 'ENOENT') this.log.error(`[Monitoring] Ignoring unreadable cache: ${error.message}`);
     }
   }
 
