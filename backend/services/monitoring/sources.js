@@ -146,15 +146,20 @@ async function fetchNortheastCatalog() {
 // ─────────────────────────────────────────────────────────────
 
 const RAINFALL_SOURCE = 'Open-Meteo weather models (hourly)';
+const OWM_SOURCE = 'OpenWeatherMap (fallback)';
 const DEM_SOURCE = 'Copernicus GLO-90 DEM via Open-Meteo';
 const BATCH_PAUSE_MS = 1_500;
 const RATE_LIMIT_WAIT_MS = 61_000;
+const OWM_API_KEY = process.env.OPENWEATHERMAP_API_KEY || process.env.OPENWEATHER_API_KEY || 'efdcd4be304dc9a480d622a2005be406';
 
 async function withRateLimitRetry(block) {
   try {
     return await block();
   } catch (error) {
     if (!(error instanceof HttpStatusError) || error.status !== 429) throw error;
+    if (String(error.message).includes('Daily API request limit exceeded')) {
+      throw error; // Fast-fail to fallback
+    }
     await sleep(RATE_LIMIT_WAIT_MS);
     return block();
   }
@@ -187,6 +192,48 @@ function parseRainfall(obj, nowMillis) {
   return { past72hMm: past72, next24hMm: next24, soilMoistureM3M3: soilNow, source: RAINFALL_SOURCE, fetchedAtMillis: nowMillis };
 }
 
+async function fetchOwmForecast(lat, lng) {
+  if (!OWM_API_KEY) return null;
+  const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&appid=${OWM_API_KEY}&units=metric`;
+  const root = await requestJson(url, { timeoutMs: 10_000 });
+  const list = root?.list;
+  if (!Array.isArray(list)) return null;
+  const nowSec = Math.floor(Date.now() / 1000);
+  let next24 = 0;
+  for (const item of list) {
+    const t = Number(item.dt);
+    if (t > nowSec && t <= nowSec + 24 * 3600) {
+      next24 += Number(item.rain?.['3h'] || 0);
+    }
+  }
+  return {
+    past72hMm: 0,
+    next24hMm: Number(next24.toFixed(1)),
+    soilMoistureM3M3: null,
+    source: OWM_SOURCE,
+    fetchedAtMillis: Date.now(),
+  };
+}
+
+async function rainfallOwmFallback(points) {
+  const cache = new Map();
+  const results = [];
+  for (const [lat, lng] of points) {
+    const cell = `${lat.toFixed(1)},${lng.toFixed(1)}`;
+    if (!cache.has(cell)) {
+      try {
+        const reading = await fetchOwmForecast(lat, lng);
+        cache.set(cell, reading);
+        await sleep(100);
+      } catch (err) {
+        cache.set(cell, null);
+      }
+    }
+    results.push(cache.get(cell));
+  }
+  return results;
+}
+
 async function rainfallChunk(points) {
   const params = new URLSearchParams({
     latitude: points.map(([lat]) => lat.toFixed(4)).join(','),
@@ -203,14 +250,23 @@ async function rainfallChunk(points) {
   return objects.map((o) => parseRainfall(o, now));
 }
 
-/** Rainfall + soil moisture for any number of points, ~50 per call. */
+/** Rainfall + soil moisture for any number of points, with OpenWeatherMap fallback on 429. */
 async function rainfall(points) {
-  const out = [];
-  for (let i = 0; i < points.length; i += 50) {
-    if (i > 0) await sleep(BATCH_PAUSE_MS);
-    out.push(...(await withRateLimitRetry(() => rainfallChunk(points.slice(i, i + 50)))));
+  try {
+    const out = [];
+    for (let i = 0; i < points.length; i += 50) {
+      if (i > 0) await sleep(BATCH_PAUSE_MS);
+      out.push(...(await withRateLimitRetry(() => rainfallChunk(points.slice(i, i + 50)))));
+    }
+    return out;
+  } catch (error) {
+    const isRateLimited = (error instanceof HttpStatusError && error.status === 429) || String(error.message).includes('429');
+    if (isRateLimited && OWM_API_KEY) {
+      console.warn(`[Rainfall] Open-Meteo rate limit reached (HTTP 429). Falling back to OpenWeatherMap...`);
+      return await rainfallOwmFallback(points);
+    }
+    throw error;
   }
-  return out;
 }
 
 async function elevationChunk(points) {
@@ -419,5 +475,6 @@ module.exports = {
   sar,
   ALOS4_UNAVAILABLE,
   RAINFALL_SOURCE,
+  OWM_SOURCE,
   DEM_SOURCE,
 };
